@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard{% endblock %}
+{% block topbar_title %}<i class="bi bi-speedometer2" style="color:var(--amber);margin-right:8px;"></i>Dashboard{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-subtitle">Resumo financeiro do período selecionado</p>
+    </div>
+    <!-- Filtro de período -->
+    <form method="GET" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap;">
+        <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Mês</label>
+            <select name="mes" class="form-select" style="width:110px;">
+                {% for m in range(1, 13) %}
+                <option value="{{ m }}" {% if mes == m %}selected{% endif %}>
+                    {{ "%02d"|format(m) }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Ano</label>
+            <input type="number" name="ano" class="form-control" style="width:90px;"
+                   value="{{ ano }}" min="2020" max="2099">
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-funnel-fill"></i> Filtrar
+        </button>
+    </form>
+</div>
+
+<!-- KPI Cards -->
+<div class="summary-cards">
+    <div class="summary-card amber">
+        <div class="summary-card-icon"><i class="bi bi-cash-stack"></i></div>
+        <div class="summary-card-label">Total do Período</div>
+        <div class="summary-card-value">R$ {{ "%.2f"|format(total_mes)|replace(".",",") }}</div>
+    </div>
+    <div class="summary-card indigo">
+        <div class="summary-card-icon"><i class="bi bi-tags-fill"></i></div>
+        <div class="summary-card-label">Categorias Ativas</div>
+        <div class="summary-card-value">{{ por_categoria|length }}</div>
+    </div>
+    <div class="summary-card green">
+        <div class="summary-card-icon"><i class="bi bi-receipt"></i></div>
+        <div class="summary-card-label">Nº de Despesas</div>
+        <div class="summary-card-value">{{ num_gastos }}</div>
+    </div>
+    <div class="summary-card red">
+        <div class="summary-card-icon"><i class="bi bi-calendar3"></i></div>
+        <div class="summary-card-label">Período</div>
+        <div class="summary-card-value" style="font-size:1.2rem;">{{ "%02d"|format(mes) }}/{{ ano }}</div>
+    </div>
+</div>
+
+<div style="display: flex; gap: 24px; flex-wrap: wrap;">
+    <!-- Gastos por categoria (Tabela) -->
+    <div class="card" style="flex: 1; min-width: 400px;">
+        <div class="card-header">
+            <span class="card-title">
+                <i class="bi bi-list-task"></i> Detalhamento por Categoria
+            </span>
+            <a href="{{ url_for('gastos.listar', mes=mes, ano=ano) }}" class="btn btn-ghost btn-sm">
+                <i class="bi bi-eye"></i> Ver todas
+            </a>
+        </div>
+
+        {% if por_categoria %}
+            {% set total_cat = namespace(val=total_mes if total_mes > 0 else 1) %}
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Categoria</th>
+                        <th>Valor</th>
+                        <th style="text-align:right;">%</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cat, total in por_categoria.items()|sort(attribute='1', reverse=True) %}
+                    <tr>
+                        <td><span class="badge badge-default">{{ cat }}</span></td>
+                        <td class="valor-negativo">R$ {{ "%.2f"|format(total)|replace(".",",") }}</td>
+                        <td style="text-align:right; color:var(--text-muted); font-size:0.8rem; font-weight:600;">
+                            {{ ((total / total_cat.val) * 100)|round(1) }}%
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <div class="empty-state">
+                <i class="bi bi-inbox"></i>
+                <p>Nenhuma despesa registrada.</p>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Gráfico (Doughnut Chart) -->
+    <div class="card" style="flex: 1; min-width: 400px; display: flex; flex-direction: column;">
+        <div class="card-header">
+            <span class="card-title">
+                <i class="bi bi-pie-chart-fill"></i> Visão Gráfica
+            </span>
+        </div>
+        <div class="card-body" style="flex: 1; display: flex; align-items: center; justify-content: center; min-height: 300px;">
+            {% if por_categoria %}
+                <canvas id="categoryChart"></canvas>
+            {% else %}
+                <div class="empty-state">
+                    <i class="bi bi-graph-down"></i>
+                    <p>Sem dados para exibir o gráfico.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{% if por_categoria %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const ctx = document.getElementById('categoryChart').getContext('2d');
+        const data = {
+            labels: {{ por_categoria.keys()|list|tojson }},
+            datasets: [{
+                data: {{ por_categoria.values()|list|tojson }},
+                backgroundColor: [
+                    '#f59e0b', '#6366f1', '#10b981', '#ef4444', 
+                    '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'
+                ],
+                borderWidth: 0,
+                hoverOffset: 15
+            }]
+        };
+
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: data,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            color: '#e2e8f0',
+                            padding: 20,
+                            font: {
+                                family: "'Inter', sans-serif",
+                                size: 12
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.label || '';
+                                if (label) { label += ': '; }
+                                if (context.parsed !== null) {
+                                    label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed);
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                cutout: '70%'
+            }
+        });
+    });
+</script>
+{% endif %}
+{% endblock %}

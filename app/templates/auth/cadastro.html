@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block title %}Cadastro{% endblock %}
+{% block auth_content %}
+
+<div class="auth-wrapper">
+    <div class="auth-card">
+        <div class="auth-logo">
+            <div class="auth-logo-icon">🍯</div>
+            <h1>Criar Conta</h1>
+            <p>Preencha os dados para se cadastrar</p>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        <i class="bi bi-{% if category == 'success' %}check-circle-fill{% else %}exclamation-triangle-fill{% endif %}"></i>
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST">
+            <div class="form-group">
+                <label class="form-label">Nome de Usuário</label>
+                <input type="text" name="nome_usuario" class="form-control"
+                       placeholder="Escolha um nome de usuário" required autofocus autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Senha</label>
+                <input type="password" name="senha" class="form-control"
+                       placeholder="Crie uma senha segura" required autocomplete="new-password">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center; margin-top:4px;">
+                <i class="bi bi-person-plus-fill"></i> Criar Conta
+            </button>
+        </form>
+
+        <div class="auth-divider">
+            Já tem conta? <a href="{{ url_for('auth.login') }}">Faça login</a>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block title %}Login{% endblock %}
+{% block auth_content %}
+
+<div class="auth-wrapper">
+    <div class="auth-card">
+        <div class="auth-logo">
+            <div class="auth-logo-icon">🍯</div>
+            <h1>Doce como Mel</h1>
+            <p>Entre na sua conta para continuar</p>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST">
+            <div class="form-group">
+                <label class="form-label">Usuário</label>
+                <input type="text" name="nome_usuario" class="form-control"
+                       placeholder="Seu nome de usuário" required autofocus autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Senha</label>
+                <input type="password" name="senha" class="form-control"
+                       placeholder="••••••••" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center; margin-top:4px;">
+                <i class="bi bi-box-arrow-in-right"></i> Entrar
+            </button>
+        </form>
+
+        <div class="auth-divider">
+            Não tem conta? <a href="{{ url_for('auth.cadastro') }}">Cadastre-se gratuitamente</a>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

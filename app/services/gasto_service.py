@@ -15,7 +15,7 @@ class GastoService:
 
     @staticmethod
     def filtrar_por_periodo(id_usuario: int, mes: int, ano: int) -> list[Gasto]:
-        # func.strftime é a forma correta de filtrar datas no SQLite
+        """Filtra gastos por mês e ano usando strftime (compatível com SQLite)."""
         return (Gasto.query
                 .filter_by(id_usuario=id_usuario)
                 .filter(func.strftime('%m', Gasto.data_gasto) == f'{mes:02d}')
@@ -25,7 +25,7 @@ class GastoService:
 
     @staticmethod
     def buscar_por_id(id_gasto: int) -> Gasto | None:
-        return Gasto.query.get(id_gasto)
+        return db.session.get(Gasto, id_gasto)
 
     @staticmethod
     def criar_gasto(dados: dict) -> Gasto:
@@ -55,8 +55,9 @@ class GastoService:
     @staticmethod
     def excluir_gasto(id_gasto: int) -> None:
         gasto = GastoService.buscar_por_id(id_gasto)
-        db.session.delete(gasto)
-        db.session.commit()
+        if gasto:
+            db.session.delete(gasto)
+            db.session.commit()
 
     @staticmethod
     def calcular_total(gastos: list[Gasto]) -> float:
@@ -69,13 +70,3 @@ class GastoService:
             nome = gasto.categoria.nome_categoria
             resultado[nome] = resultado.get(nome, 0) + gasto.valor
         return resultado
-
-    @staticmethod
-    def ranking_maiores_gastos(id_usuario: int, mes: int, ano: int) -> list[Gasto]:
-        # func.strftime é a forma correta de filtrar datas no SQLite
-        return (Gasto.query
-                .filter_by(id_usuario=id_usuario)
-                .filter(func.strftime('%m', Gasto.data_gasto) == f'{mes:02d}')
-                .filter(func.strftime('%Y', Gasto.data_gasto) == str(ano))
-                .order_by(Gasto.valor.desc())
-                .all())

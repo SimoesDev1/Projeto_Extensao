@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doce como Mel – {% block title %}{% endblock %}</title>
+    <meta name="description" content="Sistema de controle de gastos mensais para pequenos negócios.">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+{% if session.get('id_usuario') %}
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+    <a href="{{ url_for('dashboard.index') }}" class="sidebar-logo">
+        <div class="sidebar-logo-icon">🍯</div>
+        <div class="sidebar-logo-text">
+            <span class="sidebar-logo-name">Doce como Mel</span>
+            <span class="sidebar-logo-sub">Controle de Gastos</span>
+        </div>
+    </a>
+
+    <nav class="sidebar-nav">
+        <span class="sidebar-section-label">Menu</span>
+        <a href="{{ url_for('dashboard.index') }}"
+           class="sidebar-link {% if request.endpoint == 'dashboard.index' %}active{% endif %}">
+            <i class="bi bi-speedometer2"></i> Dashboard
+        </a>
+        <a href="{{ url_for('gastos.listar') }}"
+           class="sidebar-link {% if request.endpoint in ['gastos.listar', 'gastos.editar'] %}active{% endif %}">
+            <i class="bi bi-receipt"></i> Despesas
+        </a>
+        <a href="{{ url_for('gastos.novo') }}"
+           class="sidebar-link {% if request.endpoint == 'gastos.novo' %}active{% endif %}">
+            <i class="bi bi-plus-circle"></i> Nova Despesa
+        </a>
+    </nav>
+
+    <div class="sidebar-bottom">
+        <a href="{{ url_for('auth.logout') }}" class="sidebar-logout">
+            <i class="bi bi-box-arrow-right"></i> Sair da conta
+        </a>
+    </div>
+</aside>
+
+<!-- TOPBAR -->
+<header class="topbar">
+    <span class="topbar-title">
+        {% block topbar_title %}{% endblock %}
+    </span>
+    <div class="topbar-user">
+        <div class="user-avatar">{{ session.get('nome_usuario', 'U')[0] }}</div>
+        <span class="user-name">{{ session.get('nome_usuario') }}</span>
+    </div>
+</header>
+
+<!-- CONTEÚDO PRINCIPAL -->
+<main class="main">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">
+                    <i class="bi bi-{% if category == 'success' %}check-circle-fill{% else %}exclamation-triangle-fill{% endif %}"></i>
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+</main>
+
+{% else %}
+
+<!-- ÁREA DE AUTH (sem sidebar) -->
+{% block auth_content %}{% endblock %}
+
+{% endif %}
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

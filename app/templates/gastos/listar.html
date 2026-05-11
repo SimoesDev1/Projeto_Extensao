@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+{% block title %}Despesas{% endblock %}
+{% block topbar_title %}<i class="bi bi-receipt" style="color:var(--amber);margin-right:8px;"></i>Despesas{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Despesas</h1>
+        <p class="page-subtitle">
+            {% if mes and ano %}
+                Exibindo {{ gastos|length }} registro(s) em {{ "%02d"|format(mes) }}/{{ ano }}
+            {% else %}
+                Todos os registros cadastrados
+            {% endif %}
+        </p>
+    </div>
+    <a href="{{ url_for('gastos.novo') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle-fill"></i> Nova Despesa
+    </a>
+</div>
+
+<!-- Card principal -->
+<div class="card">
+
+    <!-- Filtro de período -->
+    <div class="filter-bar">
+        <form method="GET" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; flex:1;">
+            <div class="form-group">
+                <label class="form-label">Mês</label>
+                <select name="mes" class="form-select" style="width:110px;">
+                    <option value="">Todos</option>
+                    {% for m in range(1, 13) %}
+                    <option value="{{ m }}" {% if mes == m %}selected{% endif %}>
+                        {{ "%02d"|format(m) }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Ano</label>
+                <input type="number" name="ano" class="form-control" style="width:90px;"
+                       placeholder="Ano" value="{{ ano or '' }}" min="2020" max="2099">
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-funnel-fill"></i> Filtrar
+            </button>
+            {% if mes or ano %}
+            <a href="{{ url_for('gastos.listar') }}" class="btn btn-outline btn-sm">
+                <i class="bi bi-x-circle"></i> Limpar
+            </a>
+            {% endif %}
+        </form>
+
+        <!-- Botão Exportar — só aparece quando há filtro de período ativo -->
+        {% if mes and ano %}
+        <a href="{{ url_for('gastos.exportar', mes=mes, ano=ano) }}"
+           class="btn btn-export btn-sm" title="Baixar relatório PDF do período">
+            <i class="bi bi-file-earmark-pdf-fill"></i> Exportar PDF
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Tabela -->
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Descrição</th>
+                <th>Categoria</th>
+                <th>Pagamento</th>
+                <th>Valor</th>
+                <th style="text-align:right;">Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for gasto in gastos %}
+            <tr>
+                <td style="white-space:nowrap; color:var(--text-muted); font-size:0.82rem;">
+                    {{ gasto.data_gasto.strftime('%d/%m/%Y') }}
+                </td>
+                <td>{{ gasto.descricao or '—' }}</td>
+                <td><span class="badge badge-default">{{ gasto.categoria.nome_categoria }}</span></td>
+                <td style="color:var(--text-muted); font-size:0.85rem;">{{ gasto.forma_pagamento }}</td>
+                <td class="valor-negativo" style="white-space:nowrap;">
+                    R$ {{ "%.2f"|format(gasto.valor)|replace(".",",") }}
+                </td>
+                <td>
+                    <div style="display:flex; gap:6px; justify-content:flex-end;">
+                        <a href="{{ url_for('gastos.editar', id=gasto.id_gasto) }}"
+                           class="btn btn-ghost btn-sm btn-icon" title="Editar">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                        <form method="POST" action="{{ url_for('gastos.excluir', id=gasto.id_gasto) }}"
+                              onsubmit="return confirm('Deseja excluir esta despesa?')">
+                            <button type="submit" class="btn btn-danger btn-sm btn-icon" title="Excluir">
+                                <i class="bi bi-trash3"></i>
+                            </button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6">
+                    <div class="empty-state">
+                        <i class="bi bi-inbox"></i>
+                        <p>Nenhuma despesa encontrada para este período.</p>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+
+        <!-- Linha de total (apenas quando há filtro e registros) -->
+        {% if mes and ano and gastos %}
+        <tfoot>
+            <tr class="table-total">
+                <td colspan="4" style="color:var(--text-muted); font-size:0.82rem;">
+                    Total do período {{ "%02d"|format(mes) }}/{{ ano }}
+                </td>
+                <td class="valor-negativo" style="white-space:nowrap;">
+                    R$ {{ "%.2f"|format(total)|replace(".",",") }}
+                </td>
+                <td></td>
+            </tr>
+        </tfoot>
+        {% endif %}
+    </table>
+</div>
+
+{% endblock %}

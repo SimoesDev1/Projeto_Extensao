@@ -6,58 +6,71 @@
     <title>Doce como Mel – {% block title %}{% endblock %}</title>
     <meta name="description" content="Sistema de controle de gastos mensais para pequenos negócios.">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        h1, h2, h3, .sidebar-logo-name, .topbar-title { font-family: 'Outfit', sans-serif; }
+    </style>
 </head>
 <body>
 
 {% if session.get('id_usuario') %}
 
 <!-- SIDEBAR -->
-<aside class="sidebar">
+<aside class="sidebar" data-aos="fade-right" data-aos-duration="800">
     <a href="{{ url_for('dashboard.index') }}" class="sidebar-logo">
-        <div class="sidebar-logo-icon">🍯</div>
+        <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo" class="sidebar-logo-img">
         <div class="sidebar-logo-text">
             <span class="sidebar-logo-name">Doce como Mel</span>
-            <span class="sidebar-logo-sub">Controle de Gastos</span>
+            <span class="sidebar-logo-sub">Gestão Financeira</span>
         </div>
     </a>
 
     <nav class="sidebar-nav">
-        <span class="sidebar-section-label">Menu</span>
+        <span class="sidebar-section-label">Principal</span>
         <a href="{{ url_for('dashboard.index') }}"
            class="sidebar-link {% if request.endpoint == 'dashboard.index' %}active{% endif %}">
-            <i class="bi bi-speedometer2"></i> Dashboard
+            <i class="bi bi-grid-1x2-fill"></i> Dashboard
+        </a>
+        <a href="{{ url_for('receitas.listar') }}"
+           class="sidebar-link {% if request.endpoint in ['receitas.listar', 'receitas.editar'] %}active{% endif %}">
+            <i class="bi bi-wallet2"></i> Minhas Receitas
         </a>
         <a href="{{ url_for('gastos.listar') }}"
            class="sidebar-link {% if request.endpoint in ['gastos.listar', 'gastos.editar'] %}active{% endif %}">
-            <i class="bi bi-receipt"></i> Despesas
+            <i class="bi bi-receipt-cutoff"></i> Minhas Despesas
         </a>
         <a href="{{ url_for('gastos.novo') }}"
            class="sidebar-link {% if request.endpoint == 'gastos.novo' %}active{% endif %}">
-            <i class="bi bi-plus-circle"></i> Nova Despesa
+            <i class="bi bi-plus-square-fill"></i> Novo Registro
+        </a>
+        <a href="{{ url_for('auth.perfil') }}"
+           class="sidebar-link {% if request.endpoint == 'auth.perfil' %}active{% endif %}">
+            <i class="bi bi-person-fill-gear"></i> Meu Perfil
         </a>
     </nav>
 
     <div class="sidebar-bottom">
         <a href="{{ url_for('auth.logout') }}" class="sidebar-logout">
-            <i class="bi bi-box-arrow-right"></i> Sair da conta
+            <i class="bi bi-power"></i> Encerrar Sessão
         </a>
     </div>
 </aside>
 
 <!-- TOPBAR -->
-<header class="topbar">
+<header class="topbar" data-aos="fade-down" data-aos-duration="600">
     <span class="topbar-title">
         {% block topbar_title %}{% endblock %}
     </span>
-    <div class="topbar-user">
+    <a href="{{ url_for('auth.perfil') }}" class="topbar-user" style="text-decoration:none;">
         <div class="user-avatar">{{ session.get('nome_usuario', 'U')[0] }}</div>
         <span class="user-name">{{ session.get('nome_usuario') }}</span>
-    </div>
+    </a>
 </header>
 
 <!-- CONTEÚDO PRINCIPAL -->
-<main class="main">
+<main class="main" data-aos="fade-up" data-aos-duration="800" data-aos-delay="200">
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             {% for category, message in messages %}
@@ -74,10 +87,19 @@
 {% else %}
 
 <!-- ÁREA DE AUTH (sem sidebar) -->
-{% block auth_content %}{% endblock %}
+<div data-aos="zoom-in" data-aos-duration="800">
+    {% block auth_content %}{% endblock %}
+</div>
 
 {% endif %}
 
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    <script>
+        AOS.init({
+            once: true,
+            offset: 0
+        });
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

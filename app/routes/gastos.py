@@ -203,3 +203,39 @@ def exportar():
         download_name=filename,
         mimetype='application/pdf'
     )
+
+
+@gastos_bp.route('/exportar-csv')
+@login_required
+def exportar_csv():
+    """Exporta os gastos do período filtrado como arquivo CSV."""
+    import csv
+    from io import StringIO
+    
+    mes = request.args.get('mes', type=int)
+    ano = request.args.get('ano', type=int)
+    id_usuario = session['id_usuario']
+
+    if not mes or not ano:
+        gastos = GastoService.listar_por_usuario(id_usuario)
+        filename = f'todas_despesas_{date.today()}.csv'
+    else:
+        gastos = GastoService.filtrar_por_periodo(id_usuario, mes, ano)
+        filename = f'despesas_{mes:02d}_{ano}.csv'
+
+    si = StringIO()
+    cw = csv.writer(si)
+    cw.writerow(['Data', 'Descricao', 'Categoria', 'Forma de Pagamento', 'Valor'])
+    
+    for g in gastos:
+        cw.writerow([
+            g.data_gasto.strftime('%d/%m/%Y'),
+            g.descricao or '',
+            g.categoria.nome_categoria,
+            g.forma_pagamento,
+            f'{g.valor:.2f}'
+        ])
+
+    output = Response(si.getvalue().encode('utf-8-sig'), mimetype='text/csv')
+    output.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    return output

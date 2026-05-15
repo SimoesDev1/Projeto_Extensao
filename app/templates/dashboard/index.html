@@ -5,53 +5,77 @@
 
 <div class="page-header">
     <div>
-        <h1 class="page-title">Dashboard</h1>
-        <p class="page-subtitle">Resumo financeiro do período selecionado</p>
+        <h1 class="page-title">Olá, {{ session.get('nome_usuario', 'Visitante') }}! 👋</h1>
+        <p class="page-subtitle">Aqui está o que aconteceu com suas finanças neste mês.</p>
     </div>
-    <!-- Filtro de período -->
-    <form method="GET" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap;">
-        <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">Mês</label>
-            <select name="mes" class="form-select" style="width:110px;">
-                {% for m in range(1, 13) %}
-                <option value="{{ m }}" {% if mes == m %}selected{% endif %}>
-                    {{ "%02d"|format(m) }}
-                </option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">Ano</label>
-            <input type="number" name="ano" class="form-control" style="width:90px;"
-                   value="{{ ano }}" min="2020" max="2099">
-        </div>
-        <button type="submit" class="btn btn-primary btn-sm">
-            <i class="bi bi-funnel-fill"></i> Filtrar
-        </button>
-    </form>
+    
+    <div class="card" style="margin-bottom:0; padding: 12px 20px; background: rgba(255,255,255,0.03);">
+        <form method="GET" style="display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Mês</label>
+                <select name="mes" class="form-select" style="width:130px; height:38px;">
+                    {% set meses_nomes = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
+                    {% for m in range(1, 13) %}
+                    <option value="{{ m }}" {% if mes == m %}selected{% endif %}>
+                        {{ meses_nomes[m-1] }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Ano</label>
+                <input type="number" name="ano" class="form-control" style="width:100px; height:38px;"
+                       value="{{ ano }}" min="2020" max="2099">
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm" style="height:38px; padding:0 20px;">
+                <i class="bi bi-filter"></i> Filtrar
+            </button>
+        </form>
+    </div>
 </div>
 
 <!-- KPI Cards -->
 <div class="summary-cards">
-    <div class="summary-card amber">
+    <!-- Card: Receitas -->
+    <div class="summary-card indigo" style="border-left: 4px solid var(--green);">
+        <div class="summary-card-icon" style="background: rgba(16, 185, 129, 0.1); color: var(--green);">
+            <i class="bi bi-wallet2"></i>
+        </div>
+        <div class="summary-card-label">Receitas Totais</div>
+        <div class="summary-card-value" style="color: var(--green);">R$ {{ "%.2f"|format(total_receitas)|replace(".",",") }}</div>
+    </div>
+
+    <!-- Card: Despesas -->
+    <div class="summary-card amber" style="border-left: 4px solid var(--amber);">
         <div class="summary-card-icon"><i class="bi bi-cash-stack"></i></div>
-        <div class="summary-card-label">Total do Período</div>
+        <div class="summary-card-label">Despesas Totais</div>
         <div class="summary-card-value">R$ {{ "%.2f"|format(total_mes)|replace(".",",") }}</div>
+        <div style="margin-top:8px;">
+            {% if total_ant > 0 %}
+                <span class="badge {% if variacao > 0 %}badge-danger{% else %}badge-success{% endif %}" style="font-size:0.65rem;">
+                    <i class="bi bi-graph-{% if variacao > 0 %}up{% else %}down{% endif %}"></i>
+                    {{ "%.1f"|format(variacao)|replace("-","") }}% vs mês ant.
+                </span>
+            {% endif %}
+        </div>
     </div>
-    <div class="summary-card indigo">
-        <div class="summary-card-icon"><i class="bi bi-tags-fill"></i></div>
-        <div class="summary-card-label">Categorias Ativas</div>
-        <div class="summary-card-value">{{ por_categoria|length }}</div>
+
+    <!-- Card: Saldo Real -->
+    <div class="summary-card" style="border-left: 4px solid {% if saldo_real >= 0 %}var(--green){% else %}var(--red){% endif %}; background: rgba(255,255,255,0.02);">
+        <div class="summary-card-icon" style="background: {% if saldo_real >= 0 %}rgba(16, 185, 129, 0.1){% else %}rgba(239, 68, 68, 0.1){% endif %}; color: {% if saldo_real >= 0 %}var(--green){% else %}var(--red){% endif %};">
+            <i class="bi bi-piggy-bank-fill"></i>
+        </div>
+        <div class="summary-card-label">Saldo / Lucro Líquido</div>
+        <div class="summary-card-value" style="color: {% if saldo_real >= 0 %}var(--green){% else %}var(--red){% endif %};">
+            R$ {{ "%.2f"|format(saldo_real)|replace(".",",") }}
+        </div>
     </div>
-    <div class="summary-card green">
-        <div class="summary-card-icon"><i class="bi bi-receipt"></i></div>
-        <div class="summary-card-label">Nº de Despesas</div>
-        <div class="summary-card-value">{{ num_gastos }}</div>
-    </div>
-    <div class="summary-card red">
-        <div class="summary-card-icon"><i class="bi bi-calendar3"></i></div>
-        <div class="summary-card-label">Período</div>
-        <div class="summary-card-value" style="font-size:1.2rem;">{{ "%02d"|format(mes) }}/{{ ano }}</div>
+
+    <!-- Card: Status -->
+    <div class="summary-card" style="background: rgba(255,255,255,0.02);">
+        <div class="summary-card-icon"><i class="bi bi-info-circle-fill"></i></div>
+        <div class="summary-card-label">Lançamentos</div>
+        <div class="summary-card-value" style="font-size:1.2rem;">{{ num_gastos }} registrados</div>
     </div>
 </div>
 

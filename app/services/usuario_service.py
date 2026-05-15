@@ -33,3 +33,15 @@ class UsuarioService:
     @staticmethod
     def nome_ja_existe(nome_usuario: str) -> bool:
         return UsuarioService.buscar_por_nome(nome_usuario) is not None
+
+    @staticmethod
+    def buscar_por_id(id_usuario: int) -> Usuario | None:
+        return db.session.get(Usuario, id_usuario)
+
+    @staticmethod
+    def atualizar_usuario(id_usuario: int, novos_dados: dict) -> Usuario:
+        usuario = UsuarioService.buscar_por_id(id_usuario)
+        if 'nome_usuario' in novos_dados:
+            usuario.nome_usuario = UsuarioService._normalizar_nome(novos_dados['nome_usuario'])
+        db.session.commit()
+        return usuario

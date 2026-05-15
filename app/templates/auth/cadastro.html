@@ -5,9 +5,8 @@
 <div class="auth-wrapper">
     <div class="auth-card">
         <div class="auth-logo">
-            <div class="auth-logo-icon">🍯</div>
-            <h1>Criar Conta</h1>
-            <p>Preencha os dados para se cadastrar</p>
+            <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Doce como Mel" class="auth-logo-img">
+            <p>Crie sua conta para começar</p>
         </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}

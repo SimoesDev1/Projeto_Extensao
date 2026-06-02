@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block title %}Meu Perfil{% endblock %}
+{% block topbar_title %}<i class="bi bi-person-circle" style="color:var(--amber);margin-right:8px;"></i>Meu Perfil{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Configurações da Conta</h1>
+        <p class="page-subtitle">Gerencie suas informações pessoais</p>
+    </div>
+</div>
+
+<div class="form-card">
+    <div class="form-card-header">
+        <i class="bi bi-person-lines-fill"></i>
+        <span class="form-card-title">Informações do Usuário</span>
+    </div>
+    <div class="form-card-body">
+        <form method="POST">
+            <div class="form-group">
+                <label class="form-label">Nome de Usuário</label>
+                <input type="text" name="nome_usuario" class="form-control" 
+                       value="{{ usuario.nome_usuario }}" required>
+                <p style="font-size:0.75rem; color:var(--text-subtle); margin-top:8px;">
+                    <i class="bi bi-info-circle"></i> Este nome será exibido nos relatórios e no dashboard.
+                </p>
+            </div>
+
+            <div style="background: rgba(255,255,255,0.02); padding: 20px; border-radius: var(--radius-sm); border: 1px solid var(--border); margin-bottom: 24px;">
+                <h3 style="font-size:0.9rem; margin-bottom:12px; color:var(--text);">Segurança</h3>
+                <p style="font-size:0.85rem; color:var(--text-muted);">
+                    Sua senha está protegida por criptografia de ponta. Para alterá-la, entre em contato com o suporte ou aguarde a próxima atualização.
+                </p>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-all"></i> Atualizar Perfil
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card" style="max-width: 800px; margin: 24px auto; border-color: rgba(239, 68, 68, 0.2);">
+    <div class="card-body" style="display:flex; align-items:center; justify-content:space-between; gap:20px;">
+        <div>
+            <h3 style="color:var(--red); font-size:1rem; margin-bottom:4px;">Encerrar Sessão</h3>
+            <p style="color:var(--text-muted); font-size:0.85rem;">Deseja sair da sua conta com segurança?</p>
+        </div>
+        <a href="{{ url_for('auth.logout') }}" class="btn btn-danger btn-sm">
+            <i class="bi bi-power"></i> Sair Agora
+        </a>
+    </div>
+</div>
+
+{% endblock %}

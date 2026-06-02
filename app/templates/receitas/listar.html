@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+{% block title %}Minhas Receitas{% endblock %}
+{% block topbar_title %}<i class="bi bi-wallet2" style="color:var(--green);margin-right:8px;"></i>Minhas Receitas{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Receitas / Ganhos</h1>
+        <p class="page-subtitle">
+            {% if mes and ano %}
+                Exibindo {{ receitas|length }} registro(s) em {{ "%02d"|format(mes) }}/{{ ano }}
+            {% else %}
+                Todos os ganhos registrados
+            {% endif %}
+        </p>
+    </div>
+    <a href="{{ url_for('receitas.nova') }}" class="btn btn-success">
+        <i class="bi bi-plus-circle-fill"></i> Nova Receita
+    </a>
+</div>
+
+<div class="card">
+    <div class="filter-bar">
+        <form method="GET" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; flex:1;">
+            <div class="form-group">
+                <label class="form-label">Mês</label>
+                <select name="mes" class="form-select" style="width:130px;">
+                    <option value="">Todos</option>
+                    {% set meses_nomes = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
+                    {% for m in range(1, 13) %}
+                    <option value="{{ m }}" {% if mes == m %}selected{% endif %}>
+                        {{ meses_nomes[m-1] }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Ano</label>
+                <input type="number" name="ano" class="form-control" style="width:90px;"
+                       placeholder="Ano" value="{{ ano or '' }}" min="2020" max="2099">
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-filter"></i> Filtrar
+            </button>
+            {% if mes or ano %}
+            <a href="{{ url_for('receitas.listar') }}" class="btn btn-outline btn-sm">
+                <i class="bi bi-x-circle"></i> Limpar
+            </a>
+            {% endif %}
+        </form>
+
+        <!-- Botões de Exportação -->
+        <div style="display:flex; gap:8px;">
+            {% if mes and ano %}
+            <a href="{{ url_for('receitas.exportar', mes=mes, ano=ano) }}"
+               class="btn btn-export btn-sm" title="Baixar relatório PDF">
+                <i class="bi bi-file-earmark-pdf-fill"></i> PDF
+            </a>
+            <a href="{{ url_for('receitas.exportar_csv', mes=mes, ano=ano) }}"
+               class="btn btn-outline btn-sm" title="Baixar dados em CSV">
+                <i class="bi bi-file-earmark-spreadsheet-fill"></i> CSV
+            </a>
+            {% else %}
+            <a href="{{ url_for('receitas.exportar') }}"
+               class="btn btn-export btn-sm" title="Baixar todos os dados em PDF">
+                <i class="bi bi-file-earmark-pdf-fill"></i> Exportar Tudo (PDF)
+            </a>
+            <a href="{{ url_for('receitas.exportar_csv') }}"
+               class="btn btn-outline btn-sm" title="Baixar todos os dados em CSV">
+                <i class="bi bi-file-earmark-spreadsheet-fill"></i> Exportar Tudo (CSV)
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Descrição</th>
+                <th>Recebimento</th>
+                <th>Valor</th>
+                <th style="text-align:right;">Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for receita in receitas %}
+            <tr>
+                <td style="color:var(--text-muted); font-size:0.82rem;">{{ receita.data_receita.strftime('%d/%m/%Y') }}</td>
+                <td>{{ receita.descricao or '—' }}</td>
+                <td><span class="badge badge-success">{{ receita.forma_recebimento }}</span></td>
+                <td class="valor-positivo">R$ {{ "%.2f"|format(receita.valor)|replace(".",",") }}</td>
+                <td>
+                    <div style="display:flex; gap:6px; justify-content:flex-end;">
+                        <a href="{{ url_for('receitas.editar', id=receita.id_receita) }}" class="btn btn-ghost btn-sm btn-icon"><i class="bi bi-pencil"></i></a>
+                        <form method="POST" action="{{ url_for('receitas.excluir', id=receita.id_receita) }}" onsubmit="return confirm('Deseja excluir esta receita?')">
+                            <button type="submit" class="btn btn-danger btn-sm btn-icon"><i class="bi bi-trash3"></i></button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5"><div class="empty-state"><i class="bi bi-inbox"></i><p>Nenhuma receita encontrada.</p></div></td></tr>
+            {% endfor %}
+        </tbody>
+        {% if mes and ano and receitas %}
+        <tfoot>
+            <tr class="table-total">
+                <td colspan="3">Total de Receitas no Período</td>
+                <td class="valor-positivo">R$ {{ "%.2f"|format(total)|replace(".",",") }}</td>
+                <td></td>
+            </tr>
+        </tfoot>
+        {% endif %}
+    </table>
+</div>
+
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% block title %}Nova Receita{% endblock %}
+{% block topbar_title %}<i class="bi bi-plus-circle" style="color:var(--green);margin-right:8px;"></i>Registrar Ganho{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Nova Receita</h1>
+        <p class="page-subtitle">Informe os detalhes da venda ou entrada</p>
+    </div>
+    <a href="{{ url_for('receitas.listar') }}" class="btn btn-outline btn-sm">Voltar</a>
+</div>
+
+<div class="form-card">
+    <div class="form-card-header">
+        <i class="bi bi-wallet2" style="color:var(--green);"></i>
+        <span class="form-card-title">Dados do Recebimento</span>
+    </div>
+    <div class="form-card-body">
+        <form method="POST">
+            <div class="form-group">
+                <label class="form-label">Descrição / Origem</label>
+                <input type="text" name="descricao" class="form-control" placeholder="Ex: Venda de Bolo de Pote, Encomenda Festa...">
+            </div>
+
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label class="form-label">Valor (R$) *</label>
+                    <input type="number" step="0.01" min="0.01" name="valor" class="form-control" placeholder="0,00" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Data *</label>
+                    <input type="date" name="data_receita" class="form-control" value="{{ hoje }}" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Forma de Recebimento *</label>
+                <select name="forma_recebimento" class="form-select" required>
+                    {% for f in formas %}
+                    <option value="{{ f }}">{{ f }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-success" style="width:100%; justify-content:center;">
+                    <i class="bi bi-check-circle-fill"></i> Salvar Receita
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}

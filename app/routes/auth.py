@@ -21,7 +21,7 @@ def login():
         if usuario:
             session['id_usuario'] = usuario.id_usuario
             session['nome_usuario'] = usuario.nome_usuario
-            return redirect(url_for('gastos.listar'))
+            return redirect(url_for('dashboard.index'))
 
         flash('Usuário ou senha inválidos.', 'danger')
 

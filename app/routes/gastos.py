@@ -117,10 +117,14 @@ def exportar():
     nome_usuario = session.get('nome_usuario', 'Usuário')
 
     if not mes or not ano:
-        flash('Selecione um mês e ano para exportar o relatório.', 'danger')
-        return redirect(url_for('gastos.listar'))
+        gastos = GastoService.listar_por_usuario(id_usuario)
+        periodo_str = "Todos os Registros"
+        filename = f'relatorio_gastos_completo_{date.today()}.pdf'
+    else:
+        gastos = GastoService.filtrar_por_periodo(id_usuario, mes, ano)
+        periodo_str = f"{mes:02d}/{ano}"
+        filename = f'relatorio_gastos_{mes:02d}_{ano}.pdf'
 
-    gastos = GastoService.filtrar_por_periodo(id_usuario, mes, ano)
     total = GastoService.calcular_total(gastos)
 
     buffer = io.BytesIO()
@@ -151,7 +155,7 @@ def exportar():
 
     # Cabeçalho do PDF
     elements.append(Paragraph("Relatório de Despesas — Doce como Mel", title_style))
-    elements.append(Paragraph(f"Usuário: {nome_usuario}  |  Período: {mes:02d}/{ano}", subtitle_style))
+    elements.append(Paragraph(f"Usuário: {nome_usuario}  |  Período: {periodo_str}", subtitle_style))
     elements.append(Spacer(1, 0.5*cm))
 
     # Dados da Tabela
@@ -195,7 +199,6 @@ def exportar():
     doc.build(elements)
     
     buffer.seek(0)
-    filename = f'relatorio_gastos_{mes:02d}_{ano}.pdf'
     
     return send_file(
         buffer,

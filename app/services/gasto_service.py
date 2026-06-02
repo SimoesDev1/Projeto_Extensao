@@ -1,6 +1,6 @@
 from app import db
 from app.models.gasto import Gasto
-from sqlalchemy import func
+from sqlalchemy import func, extract
 
 
 class GastoService:
@@ -15,11 +15,11 @@ class GastoService:
 
     @staticmethod
     def filtrar_por_periodo(id_usuario: int, mes: int, ano: int) -> list[Gasto]:
-        """Filtra gastos por mês e ano usando strftime (compatível com SQLite)."""
+        """Filtra gastos por mês e ano usando extract (compatível com SQLite e PostgreSQL)."""
         return (Gasto.query
                 .filter_by(id_usuario=id_usuario)
-                .filter(func.strftime('%m', Gasto.data_gasto) == f'{mes:02d}')
-                .filter(func.strftime('%Y', Gasto.data_gasto) == str(ano))
+                .filter(extract('month', Gasto.data_gasto) == mes)
+                .filter(extract('year', Gasto.data_gasto) == ano)
                 .order_by(Gasto.data_gasto.desc())
                 .all())
 

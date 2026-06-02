@@ -64,6 +64,10 @@
                 <i class="bi bi-file-earmark-spreadsheet-fill"></i> CSV
             </a>
             {% else %}
+            <a href="{{ url_for('gastos.exportar') }}"
+               class="btn btn-export btn-sm" title="Baixar todos os dados em PDF">
+                <i class="bi bi-file-earmark-pdf-fill"></i> Exportar Tudo (PDF)
+            </a>
             <a href="{{ url_for('gastos.exportar_csv') }}"
                class="btn btn-outline btn-sm" title="Baixar todos os dados em CSV">
                 <i class="bi bi-file-earmark-spreadsheet-fill"></i> Exportar Tudo (CSV)

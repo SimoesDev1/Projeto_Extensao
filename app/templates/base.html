@@ -43,7 +43,11 @@
         </a>
         <a href="{{ url_for('gastos.novo') }}"
            class="sidebar-link {% if request.endpoint == 'gastos.novo' %}active{% endif %}">
-            <i class="bi bi-plus-square-fill"></i> Novo Registro
+            <i class="bi bi-plus-square-fill" style="color:var(--amber);"></i> Nova Despesa
+        </a>
+        <a href="{{ url_for('receitas.nova') }}"
+           class="sidebar-link {% if request.endpoint == 'receitas.nova' %}active{% endif %}">
+            <i class="bi bi-plus-square-fill" style="color:var(--green);"></i> Nova Receita
         </a>
         <a href="{{ url_for('auth.perfil') }}"
            class="sidebar-link {% if request.endpoint == 'auth.perfil' %}active{% endif %}">

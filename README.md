@@ -64,7 +64,7 @@ cp .env.example .env
 ### Configuração do `.env`
 
 ```env
-DATABASE_URL=postgresql://usuario:senha@localhost:5432/doce_como_mel
+DATABASE_URL=postgresql://usuario:senha@localhost:5432/seu_banco
 SECRET_KEY=sua_chave_secreta_aqui
 ```
 

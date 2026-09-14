@@ -10,7 +10,7 @@ Sistema web de **controle de gastos para confeitaria**, desenvolvido como Projet
 |---|---|
 | Backend | Python 3 + Flask |
 | ORM | Flask-SQLAlchemy |
-| Banco de Dados | PostgreSQL (psycopg2) |
+| Banco de Dados | Supabase |
 | Relatórios | ReportLab |
 | Templates | Jinja2 (HTML/CSS) |
 | Variáveis de Ambiente | python-dotenv |

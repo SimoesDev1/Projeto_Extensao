@@ -280,6 +280,7 @@
             window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
         }
     </script>
+    {% if session.get('id_usuario') %}{% include '_chat_widget.html' %}{% endif %}
     {% block scripts %}{% endblock %}
 </body>
 

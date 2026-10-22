@@ -119,7 +119,7 @@ def create_app():
         from flask import jsonify
         manifest = {
             "name": "Doce como Mel",
-            "short_name": "DocelMel",
+            "short_name": "DoceMel",
             "description": "Gestão financeira para pequenos negócios",
             "start_url": "/dashboard/",
             "display": "standalone",

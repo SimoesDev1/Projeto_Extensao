@@ -74,6 +74,10 @@
                 class="sidebar-link {% if request.endpoint and request.endpoint.startswith('metas.') %}active{% endif %}">
                 <i class="bi bi-bullseye"></i> Metas / Orçamento
             </a>
+            <a href="{{ url_for('metas_receita.listar') }}"
+                class="sidebar-link {% if request.endpoint and request.endpoint.startswith('metas_receita.') %}active{% endif %}">
+                <i class="bi bi-graph-up-arrow"></i> Metas de Receita
+            </a>
             <a href="{{ url_for('relatorios.index') }}"
                 class="sidebar-link {% if request.endpoint and request.endpoint.startswith('relatorios.') %}active{% endif %}">
                 <i class="bi bi-file-earmark-bar-graph-fill"></i> Relatórios

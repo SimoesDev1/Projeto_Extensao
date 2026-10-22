@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+{% block title %}Metas de Receita{% endblock %}
+{% block topbar_title %}<i class="bi bi-graph-up-arrow" style="color:var(--amber);margin-right:8px;"></i>Metas de Receita{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Metas de Receita</h1>
+        <p class="page-subtitle">Acompanhe o faturamento por tipo de receita em {{ "%02d"|format(mes) }}/{{ ano }}</p>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom: 24px;">
+    <div class="card-body" style="padding: 16px 20px;">
+        <form method="GET" style="display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap;">
+            <div class="form-group" style="width: 100px;">
+                <label class="form-label">M&ecirc;s</label>
+                <input type="number" name="mes" class="form-control" value="{{ mes }}" min="1" max="12">
+            </div>
+            <div class="form-group" style="width: 100px;">
+                <label class="form-label">Ano</label>
+                <input type="number" name="ano" class="form-control" value="{{ ano }}" min="2020" max="2099">
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm" style="height:38px;">
+                <i class="bi bi-funnel-fill"></i> Ver Per&iacute;odo
+            </button>
+        </form>
+    </div>
+</div>
+
+<div style="display:grid; grid-template-columns: 1fr 340px; gap: 24px; align-items: start;">
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Metas Definidas</h3>
+            <span class="card-subtitle">{{ progresso|length }} meta(s) para este m&ecirc;s</span>
+        </div>
+        <div class="card-body">
+            {% if progresso %}
+            <div style="display:flex; flex-direction:column; gap:20px;">
+                {% for item in progresso %}
+                <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-md); padding:16px 20px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <span class="badge badge-default" style="font-size:0.85rem;">{{ item.tipo }}</span>
+                            {% if item.atingiu %}
+                            <span class="badge badge-success"><i class="bi bi-check-circle" style="margin-right:4px;"></i> Meta atingida</span>
+                            {% elif item.pct >= 80 %}
+                            <span class="badge" style="background:rgba(245,158,11,0.15); color:var(--amber); border:1px solid rgba(245,158,11,0.3);"><i class="bi bi-exclamation-circle" style="margin-right:4px;"></i> Quase l&aacute;</span>
+                            {% endif %}
+                        </div>
+                        <form method="POST" action="{{ url_for('metas_receita.excluir', id=item.meta.id_meta_receita) }}"
+                              data-confirm="Deseja remover a meta de '{{ item.tipo }}'?">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-ghost btn-sm btn-icon" title="Remover meta" style="color:var(--red);">
+                                <i class="bi bi-trash3"></i>
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="progress-bar-container" style="height:10px; margin: 12px 0 8px 0; background:rgba(255,255,255,0.06);">
+                        <div class="progress-bar-fill" style="width: {{ item.pct }}%; {% if item.atingiu %}background:linear-gradient(90deg, #10b981, #059669);{% endif %}"></div>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.82rem;">
+                        <span style="color:var(--text-muted);">
+                            Realizado: <strong style="color:var(--text);">R$ {{ "%.2f"|format(item.real)|replace('.',',') }}</strong>
+                            / Meta: <strong>R$ {{ "%.2f"|format(item.meta_val)|replace('.',',') }}</strong>
+                        </span>
+                        <span style="font-weight:700; color:{% if item.atingiu %}var(--green){% elif item.pct >= 80 %}var(--amber){% else %}var(--text-muted){% endif %};">
+                            {{ item.pct }}%
+                        </span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <i class="bi bi-graph-up-arrow"></i>
+                <p>Nenhuma meta de receita definida para este m&ecirc;s.<br>Use o formul&aacute;rio ao lado para cadastrar a primeira.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Definir Meta</h3>
+            <span class="card-subtitle">M&ecirc;s {{ "%02d"|format(mes) }}/{{ ano }}</span>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('metas_receita.salvar') }}" data-loading>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="mes" value="{{ mes }}">
+                <input type="hidden" name="ano" value="{{ ano }}">
+
+                <div class="form-group">
+                    <label class="form-label">Tipo de receita <span style="color:var(--red);">*</span></label>
+                    <select name="tipo_receita" class="form-select" required>
+                        <option value="" disabled selected>Escolha um tipo</option>
+                        {% for t in tipos %}
+                        <option value="{{ t }}">{{ t }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Meta mensal (R$) <span style="color:var(--red);">*</span></label>
+                    <input type="number" step="0.01" min="0.01" name="valor_meta"
+                           class="form-control" placeholder="Ex: 3000.00" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center; margin-top:8px;">
+                    <i class="bi bi-check-circle-fill"></i> Salvar Meta
+                </button>
+            </form>
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}

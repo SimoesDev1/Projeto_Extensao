@@ -1,0 +1,396 @@
+{% extends 'base.html' %}
+{% block title %}Revisar Leitura da IA{% endblock %}
+{% block topbar_title %}<i class="bi bi-magic" style="color:#c084fc;margin-right:8px;"></i>Revisar Leitura da Nota{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Revisão de Lançamento</h1>
+        <p class="page-subtitle">Verifique os dados extraídos pelo agente de IA e ajuste antes de salvar no sistema</p>
+    </div>
+    <div style="display:flex; gap:10px;">
+        <a href="{{ url_for('ia_fiscal.cancelar') }}" class="btn btn-outline btn-sm">
+            <i class="bi bi-x-circle"></i> Descartar
+        </a>
+    </div>
+</div>
+
+<form method="POST" action="{{ url_for('ia_fiscal.confirmar') }}" data-loading id="form-revisao">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div style="display: grid; grid-template-columns: 420px 1fr; gap: 24px; align-items: start;">
+
+        <!-- PAINEL DA ESQUERDA: VISUALIZAÇÃO DO COMPROVANTE -->
+        <div class="card" style="position: sticky; top: 90px;">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3 class="card-title">Documento Digitalizado</h3>
+                <span class="badge badge-default" style="font-size:0.75rem;">Visualização</span>
+            </div>
+            <div class="card-body" style="padding: 16px; text-align: center;">
+                {% if is_pdf %}
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 32px 16px; margin-bottom: 12px;">
+                        <i class="bi bi-file-earmark-pdf-fill" style="font-size: 3rem; color: var(--red);"></i>
+                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 8px;">Documento PDF Carregado</p>
+                        <a href="{{ preview_uri }}" target="_blank" class="btn btn-outline btn-sm" style="margin-top: 12px;">
+                            <i class="bi bi-box-arrow-up-right"></i> Abrir PDF em Nova Aba
+                        </a>
+                    </div>
+                {% else %}
+                    <div style="max-height: 480px; overflow-y: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); background: #000;">
+                        <img src="{{ preview_uri }}" alt="Nota Fiscal" style="width: 100%; height: auto; display: block; object-fit: contain;">
+                    </div>
+                {% endif %}
+
+                {% if dados.estabelecimento %}
+                <div style="margin-top: 14px; text-align: left; font-size: 0.85rem; color: var(--text-muted); background: var(--surface-2); padding: 10px 14px; border-radius: var(--radius-sm);">
+                    <i class="bi bi-shop" style="color: var(--amber); margin-right: 6px;"></i>
+                    <strong>Emissor detectado:</strong> {{ dados.estabelecimento }}
+                </div>
+                {% endif %}
+                {% if dados.observacoes %}
+                <div style="margin-top: 8px; text-align: left; font-size: 0.8rem; color: var(--text-subtle); line-height: 1.4;">
+                    <i class="bi bi-info-circle"></i> {{ dados.observacoes }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- PAINEL DA DIREITA: FORMULÁRIO DE CONFIRMAÇÃO DOS DADOS -->
+        <div style="display:flex; flex-direction:column; gap:20px;">
+
+            <!-- PARÂMETROS GERAIS DA TRANSAÇÃO -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">1. Dados Gerais</h3>
+                    <span class="card-subtitle">Classificação principal do lançamento</span>
+                </div>
+                <div class="card-body">
+                    <div class="form-grid-2">
+                        <!-- Tipo da Transação -->
+                        <div class="form-group">
+                            <label class="form-label">Tipo de Lançamento <span style="color:var(--red);">*</span></label>
+                            <select name="tipo_transacao" id="sel-tipo-transacao" class="form-select" onchange="toggleTipoTransacao(this.value)">
+                                <option value="despesa" {% if dados.tipo_transacao == 'despesa' %}selected{% endif %}>
+                                    🛒 Despesa / Compra de Insumos
+                                </option>
+                                <option value="receita" {% if dados.tipo_transacao == 'receita' %}selected{% endif %}>
+                                    💰 Receita / Venda Realizada
+                                </option>
+                            </select>
+                        </div>
+
+                        <!-- Data -->
+                        <div class="form-group">
+                            <label class="form-label">Data da Operação <span style="color:var(--red);">*</span></label>
+                            <input type="date" name="data" class="form-control" value="{{ dados.data }}" required>
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2">
+                        <!-- Forma de Pagamento / Recebimento -->
+                        <div class="form-group">
+                            <label class="form-label">Forma de Pagamento / Recebimento <span style="color:var(--red);">*</span></label>
+                            <select name="forma_pagamento" id="sel-forma-pagamento" class="form-select" required onchange="ajustarFormaPagamento(this.value)">
+                                {% for fp in formas_pagamento %}
+                                <option value="{{ fp }}" {% if dados.forma_pagamento and dados.forma_pagamento.lower() == fp.lower() %}selected{% endif %}>
+                                    {{ fp }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Total Lido -->
+                        <div class="form-group">
+                            <label class="form-label">Valor Total do Comprovante</label>
+                            <div style="font-size: 1.25rem; font-weight: 800; color: var(--amber); padding-top: 6px;">
+                                R$ {{ "%.2f"|format(dados.valor_total or 0)|replace('.',',') }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Seção de Parcelamento (Ativada se compra parcelada detectada pela IA ou selecionada manualmente) -->
+                    <div id="bloco-parcelamento" style="margin-top: 14px; padding: 14px 16px; background: rgba(168, 85, 247, 0.06); border: 1px solid rgba(168, 85, 247, 0.28); border-radius: var(--radius-sm);">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:600; font-size:0.9rem; color: #e9d5ff; margin-bottom:0;">
+                                <input type="checkbox" name="is_parcelado" id="chk-parcelado" {% if dados.is_parcelado or dados.numero_parcelas > 1 %}checked{% endif %} onchange="toggleParcelamento()">
+                                <span><i class="bi bi-credit-card-2-front"></i> Compra Parcelada no Cartão?</span>
+                            </label>
+                            {% if dados.is_parcelado or dados.numero_parcelas > 1 %}
+                            <span class="badge" style="background:#a855f7; color:#fff; font-size:0.75rem;">
+                                <i class="bi bi-stars"></i> IA Detectou {{ dados.numero_parcelas }}x
+                            </span>
+                            {% endif %}
+                        </div>
+
+                        <div id="campos-parcelamento" style="margin-top: 12px; display: {% if dados.is_parcelado or dados.numero_parcelas > 1 %}grid{% else %}none{% endif %}; grid-template-columns: 160px 1fr; gap: 16px; align-items:center;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label class="form-label" style="font-size:0.8rem;">Número de Parcelas</label>
+                                <select name="numero_parcelas" id="sel-numero-parcelas" class="form-select" onchange="atualizarPreviewParcelas()">
+                                    {% for n in range(2, 25) %}
+                                    <option value="{{ n }}" {% if dados.numero_parcelas == n %}selected{% endif %}>{{ n }}x parcelas</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div id="resumo-cronograma" style="font-size: 0.83rem; color: var(--text-muted); background: var(--surface-1); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+                                <i class="bi bi-calendar-range" style="color:#c084fc; margin-right:4px;"></i>
+                                <span id="texto-resumo-parcelas">Calculando distribuição mensal...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SEÇÃO DE DESPESAS (SEPARADA POR ITENS E CATEGORIAS) -->
+            <div class="card" id="secao-despesas" style="{% if dados.tipo_transacao == 'receita' %}display:none;{% endif %}">
+                <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h3 class="card-title">2. Itens Identificados e Categorização</h3>
+                        <span class="card-subtitle">Cada item será registrado com sua categoria correspondente</span>
+                    </div>
+                    <button type="button" class="btn btn-outline btn-sm" onclick="adicionarLinhaItem()">
+                        <i class="bi bi-plus-circle"></i> Adicionar Item
+                    </button>
+                </div>
+                <div class="card-body" style="padding: 0;">
+                    <table class="table" id="tabela-itens">
+                        <thead>
+                            <tr>
+                                <th>Descrição do Item</th>
+                                <th style="width: 130px;">Valor (R$)</th>
+                                <th style="width: 220px;">Categoria</th>
+                                <th style="width: 50px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="itens-body">
+                            {% for item in dados.itens %}
+                            <tr>
+                                <td>
+                                    <input type="text" name="item_descricao[]" class="form-control"
+                                           value="{{ item.descricao }}" placeholder="Ex: Barra de Chocolate" required>
+                                </td>
+                                <td>
+                                    <input type="number" step="0.01" min="0.01" name="item_valor[]" class="form-control item-val"
+                                           value="{{ item.valor }}" required oninput="calcularTotalItens()">
+                                </td>
+                                <td>
+                                    <select name="item_categoria[]" class="form-select" required>
+                                        {% for cat in categorias %}
+                                        <option value="{{ cat.id_categoria }}"
+                                            {% if item.categoria_sugerida and cat.nome_categoria.lower() in item.categoria_sugerida.lower() %}selected{% elif loop.first and not item.categoria_sugerida %}selected{% endif %}>
+                                            {{ cat.nome_categoria }}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td style="text-align: center;">
+                                    <button type="button" class="btn btn-ghost btn-sm btn-icon" onclick="removerLinhaItem(this)" title="Remover item">
+                                        <i class="bi bi-trash3" style="color:var(--red);"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td>
+                                    <input type="text" name="item_descricao[]" class="form-control"
+                                           value="{{ dados.estabelecimento or 'Despesa de Comprovante' }}" required>
+                                </td>
+                                <td>
+                                    <input type="number" step="0.01" min="0.01" name="item_valor[]" class="form-control item-val"
+                                           value="{{ dados.valor_total or 0 }}" required oninput="calcularTotalItens()">
+                                </td>
+                                <td>
+                                    <select name="item_categoria[]" class="form-select" required>
+                                        {% for cat in categorias %}
+                                        <option value="{{ cat.id_categoria }}">{{ cat.nome_categoria }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td style="text-align: center;">
+                                    <button type="button" class="btn btn-ghost btn-sm btn-icon" onclick="removerLinhaItem(this)">
+                                        <i class="bi bi-trash3" style="color:var(--red);"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr class="table-total">
+                                <td style="font-size:0.85rem; color:var(--text-muted);">Soma dos Itens a lançar:</td>
+                                <td id="soma-itens-total" class="valor-negativo" style="white-space:nowrap;">
+                                    R$ {{ "%.2f"|format(dados.valor_total or 0)|replace('.',',') }}
+                                </td>
+                                <td colspan="2"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SEÇÃO DE RECEITA (QUANDO FOR VENDA) -->
+            <div class="card" id="secao-receita" style="{% if dados.tipo_transacao != 'receita' %}display:none;{% endif %}">
+                <div class="card-header">
+                    <h3 class="card-title">2. Dados da Receita</h3>
+                    <span class="card-subtitle">Lançamento de entrada no caixa</span>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label class="form-label">Descrição da Venda / Origem</label>
+                        <input type="text" name="receita_descricao" class="form-control"
+                               value="{{ dados.estabelecimento or 'Venda de Produtos' }}">
+                    </div>
+
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label class="form-label">Tipo de Receita</label>
+                            <select name="tipo_receita" class="form-select">
+                                {% for tr in tipos_receita %}
+                                <option value="{{ tr }}" {% if dados.tipo_receita and dados.tipo_receita.lower() == tr.lower() %}selected{% endif %}>
+                                    {{ tr }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Valor Recebido (R$)</label>
+                            <input type="number" step="0.01" min="0.01" name="receita_valor" class="form-control"
+                                   value="{{ dados.valor_total or 0 }}">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- BOTÕES DE SUBMISSÃO -->
+            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:10px;">
+                <a href="{{ url_for('ia_fiscal.cancelar') }}" class="btn btn-outline">
+                    Cancelar
+                </a>
+                <button type="submit" class="btn btn-primary" style="height: 44px; padding: 0 28px; background: linear-gradient(135deg, #10b981, #059669); border:none;">
+                    <i class="bi bi-check-circle-fill"></i> Confirmar e Lançar no Sistema
+                </button>
+            </div>
+
+        </div>
+
+    </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function setSectionEnabled(section, enabled) {
+        if (!section) return;
+        section.querySelectorAll('input, select, textarea').forEach(el => {
+            el.disabled = !enabled;
+        });
+    }
+
+    function toggleTipoTransacao(tipo) {
+        const secDespesas = document.getElementById('secao-despesas');
+        const secReceita = document.getElementById('secao-receita');
+        const blocoParcelamento = document.getElementById('bloco-parcelamento');
+        const isReceita = tipo === 'receita';
+
+        secDespesas.style.display = isReceita ? 'none' : 'block';
+        secReceita.style.display = isReceita ? 'block' : 'none';
+        if (blocoParcelamento) {
+            blocoParcelamento.style.display = isReceita ? 'none' : 'block';
+        }
+
+        // Campos desabilitados não bloqueiam a validação HTML5 nem são enviados
+        setSectionEnabled(secDespesas, !isReceita);
+        setSectionEnabled(secReceita, isReceita);
+        if (blocoParcelamento) {
+            setSectionEnabled(blocoParcelamento, !isReceita);
+        }
+    }
+
+    function ajustarFormaPagamento(forma) {
+        const chk = document.getElementById('chk-parcelado');
+        if (forma === 'Cartão de Crédito') {
+            // Se mudou para cartão de crédito, sugere ou mantém parcelamento
+        } else if (chk && chk.checked) {
+            // Se mudou para dinheiro ou pix mas estava marcado parcelado, volta para cartão
+            const selFp = document.getElementById('sel-forma-pagamento');
+            if (selFp) selFp.value = 'Cartão de Crédito';
+        }
+    }
+
+    function toggleParcelamento() {
+        const chk = document.getElementById('chk-parcelado');
+        const campos = document.getElementById('campos-parcelamento');
+        const selFp = document.getElementById('sel-forma-pagamento');
+
+        if (chk && campos) {
+            campos.style.display = chk.checked ? 'grid' : 'none';
+            if (chk.checked && selFp) {
+                selFp.value = 'Cartão de Crédito';
+            }
+            atualizarPreviewParcelas();
+        }
+    }
+
+    function atualizarPreviewParcelas() {
+        const chk = document.getElementById('chk-parcelado');
+        if (!chk || !chk.checked) return;
+
+        const sel = document.getElementById('sel-numero-parcelas');
+        const numParcelas = parseInt(sel.value) || 1;
+
+        let total = 0;
+        document.querySelectorAll('.item-val:not(:disabled)').forEach(input => {
+            const v = parseFloat(input.value) || 0;
+            total += v;
+        });
+
+        const valorParcela = total > 0 ? (total / numParcelas).toFixed(2).replace('.', ',') : '0,00';
+        const txt = document.getElementById('texto-resumo-parcelas');
+        if (txt) {
+            txt.innerHTML = `Serão gerados <strong>${numParcelas} lançamentos mensais</strong> de aprox. <strong style="color:var(--amber);">R$ ${valorParcela}</strong> cada nos próximos ${numParcelas} meses.`;
+        }
+    }
+
+    function calcularTotalItens() {
+        let total = 0;
+        document.querySelectorAll('.item-val:not(:disabled)').forEach(input => {
+            const v = parseFloat(input.value) || 0;
+            total += v;
+        });
+        const el = document.getElementById('soma-itens-total');
+        if (el) {
+            el.textContent = 'R$ ' + total.toFixed(2).replace('.', ',');
+        }
+        atualizarPreviewParcelas();
+    }
+
+    function removerLinhaItem(btn) {
+        const tr = btn.closest('tr');
+        const tbody = document.getElementById('itens-body');
+        if (tbody.querySelectorAll('tr').length > 1) {
+            tr.remove();
+            calcularTotalItens();
+        } else {
+            alert('A nota deve conter pelo menos um item.');
+        }
+    }
+
+    function adicionarLinhaItem() {
+        const tbody = document.getElementById('itens-body');
+        const firstTr = tbody.querySelector('tr');
+        const newTr = firstTr.cloneNode(true);
+
+        newTr.querySelector('input[name="item_descricao[]"]').value = '';
+        newTr.querySelector('input[name="item_valor[]"]').value = '0.00';
+        newTr.querySelectorAll('input, select').forEach(el => { el.disabled = false; });
+        tbody.appendChild(newTr);
+        calcularTotalItens();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const sel = document.getElementById('sel-tipo-transacao');
+        if (sel) toggleTipoTransacao(sel.value);
+        calcularTotalItens();
+        atualizarPreviewParcelas();
+    });
+</script>
+{% endblock %}

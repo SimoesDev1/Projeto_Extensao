@@ -45,3 +45,17 @@ class UsuarioService:
             usuario.nome_usuario = UsuarioService._normalizar_nome(novos_dados['nome_usuario'])
         db.session.commit()
         return usuario
+
+    @staticmethod
+    def alterar_senha(id_usuario: int, senha_atual: str, nova_senha: str) -> tuple[bool, str]:
+        """Altera a senha do usuário após verificar a senha atual. Retorna (sucesso, mensagem)."""
+        usuario = UsuarioService.buscar_por_id(id_usuario)
+        if not usuario:
+            return False, 'Usuário não encontrado.'
+        if not usuario.verificar_senha(senha_atual):
+            return False, 'Senha atual incorreta.'
+        if len(nova_senha) < 6:
+            return False, 'A nova senha deve ter pelo menos 6 caracteres.'
+        usuario.set_senha(nova_senha)
+        db.session.commit()
+        return True, 'Senha alterada com sucesso!'

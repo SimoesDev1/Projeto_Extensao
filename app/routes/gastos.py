@@ -1,38 +1,54 @@
-import io
-from flask import Blueprint, render_template, redirect, url_for, request, flash, session, Response, send_file
-from app.services.gasto_service import GastoService
-from app.services.categoria_service import CategoriaService
-from app.utils import login_required
+import csv
+import logging
+from io import StringIO
 from datetime import datetime, date
 
-# Imports para PDF
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.units import cm
+from flask import (Blueprint, render_template, redirect, url_for,
+                   request, flash, session, Response, send_file)
 
+from app.services.gasto_service import GastoService
+from app.services.categoria_service import CategoriaService
+from app.services.pdf_service import PdfService
+from app.utils import login_required
+
+logger = logging.getLogger(__name__)
 gastos_bp = Blueprint('gastos', __name__, url_prefix='/gastos')
 
 FORMAS_PAGAMENTO = ['Dinheiro', 'Pix', 'Cartão de Débito', 'Cartão de Crédito']
+PER_PAGE = 20
 
 
 @gastos_bp.route('/')
 @login_required
 def listar():
+    id_usuario = session['id_usuario']
     mes = request.args.get('mes', type=int)
     ano = request.args.get('ano', type=int)
-    id_usuario = session['id_usuario']
+    busca = request.args.get('busca', '').strip() or None
+    id_categoria = request.args.get('id_categoria', type=int) or None
+    parcelados = request.args.get('parcelados', type=int) == 1
+    page = request.args.get('page', type=int, default=1)
 
-    if mes and ano:
-        gastos = GastoService.filtrar_por_periodo(id_usuario, mes, ano)
-    else:
-        gastos = GastoService.listar_por_usuario(id_usuario)
-        mes = None
-        ano = None
+    categorias = CategoriaService.listar_todas()
 
+    paginacao = GastoService.listar_paginado(
+        id_usuario=id_usuario, page=page, per_page=PER_PAGE,
+        mes=mes, ano=ano, busca=busca, id_categoria=id_categoria,
+        apenas_parcelados=parcelados
+    )
+
+    gastos = paginacao.items
     total = GastoService.calcular_total(gastos)
-    return render_template('gastos/listar.html', gastos=gastos, mes=mes, ano=ano, total=total)
+    projecoes = GastoService.buscar_projecao_parcelas_futuras(id_usuario, 4)
+
+    return render_template(
+        'gastos/listar.html',
+        gastos=gastos, paginacao=paginacao,
+        mes=mes, ano=ano, busca=busca or '',
+        id_categoria=id_categoria, categorias=categorias,
+        parcelados=parcelados, projecoes=projecoes,
+        total=float(total)
+    )
 
 
 @gastos_bp.route('/novo', methods=['GET', 'POST'])
@@ -50,13 +66,51 @@ def novo():
                 'id_usuario': session['id_usuario'],
                 'id_categoria': int(request.form.get('id_categoria', 0))
             }
+            if dados['valor'] <= 0:
+                flash('O valor da despesa deve ser maior que zero.', 'danger')
+                return render_template('gastos/novo.html', categorias=categorias, hoje=date.today(),
+                                       formas=FORMAS_PAGAMENTO)
+            if dados['id_categoria'] <= 0:
+                flash('Selecione uma categoria válida.', 'danger')
+                return render_template('gastos/novo.html', categorias=categorias, hoje=date.today(),
+                                       formas=FORMAS_PAGAMENTO)
+
+            is_parcelado = request.form.get('is_parcelado') in ['on', '1', 'true', 'True']
+            try:
+                numero_parcelas = int(request.form.get('numero_parcelas', 1))
+            except (ValueError, TypeError):
+                numero_parcelas = 1
+
+            if not is_parcelado or numero_parcelas < 1:
+                numero_parcelas = 1
+
+            # Upload opcional de comprovante
+            if 'comprovante' in request.files:
+                file = request.files['comprovante']
+                if file and file.filename != '':
+                    import os, uuid
+                    from flask import current_app
+                    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+                    if ext in ['png', 'jpg', 'jpeg', 'webp', 'pdf']:
+                        comprovante_nome = f"{uuid.uuid4()}.{ext}"
+                        caminho = os.path.join(current_app.config['UPLOAD_COMPROVANTES_DIR'], comprovante_nome)
+                        file.save(caminho)
+                        dados['comprovante'] = comprovante_nome
+
         except (ValueError, TypeError):
             flash('Dados inválidos. Verifique o formulário.', 'danger')
             return render_template('gastos/novo.html', categorias=categorias, hoje=date.today(),
                                    formas=FORMAS_PAGAMENTO)
 
-        GastoService.criar_gasto(dados)
-        flash('Despesa cadastrada com sucesso!', 'success')
+        if numero_parcelas > 1:
+            GastoService.criar_gasto_parcelado(dados, numero_parcelas)
+            logger.info(f"Compra parcelada criada por usuário {session['id_usuario']}: {numero_parcelas}x de R${dados['valor']/numero_parcelas:.2f}")
+            flash(f'Compra parcelada em {numero_parcelas}x com sucesso! {numero_parcelas} lançamentos gerados nos respectivos meses.', 'success')
+        else:
+            GastoService.criar_gasto(dados)
+            logger.info(f"Gasto criado por usuário {session['id_usuario']}: R${dados['valor']}")
+            flash('Despesa cadastrada com sucesso!', 'success')
+
         return redirect(url_for('gastos.listar'))
 
     return render_template('gastos/novo.html', categorias=categorias, hoje=date.today(),
@@ -82,6 +136,14 @@ def editar(id):
                 'descricao': request.form.get('descricao') or None,
                 'id_categoria': int(request.form.get('id_categoria', 0))
             }
+            if dados['valor'] <= 0:
+                flash('O valor da despesa deve ser maior que zero.', 'danger')
+                return render_template('gastos/editar.html', gasto=gasto, categorias=categorias,
+                                       formas=FORMAS_PAGAMENTO)
+            if dados['id_categoria'] <= 0:
+                flash('Selecione uma categoria válida.', 'danger')
+                return render_template('gastos/editar.html', gasto=gasto, categorias=categorias,
+                                       formas=FORMAS_PAGAMENTO)
         except (ValueError, TypeError):
             flash('Dados inválidos. Verifique o formulário.', 'danger')
             return render_template('gastos/editar.html', gasto=gasto, categorias=categorias,
@@ -100,17 +162,49 @@ def editar(id):
 def excluir(id):
     gasto = GastoService.buscar_por_id(id)
     if gasto and gasto.id_usuario == session['id_usuario']:
-        GastoService.excluir_gasto(id)
-        flash('Despesa excluída com sucesso!', 'success')
+        excluir_todas = request.form.get('excluir_todas') == '1'
+        qtd = GastoService.excluir_gasto(id, excluir_todas_parcelas=excluir_todas)
+        if excluir_todas and qtd > 1:
+            flash(f'Todas as {qtd} parcelas desta compra foram excluídas!', 'success')
+        else:
+            flash('Despesa excluída com sucesso!', 'success')
     else:
         flash('Despesa não encontrada.', 'danger')
     return redirect(url_for('gastos.listar'))
 
 
+
+@gastos_bp.route('/detalhes/<int:id>')
+@login_required
+def detalhes(id):
+    """Exibe a visualização detalhada de uma despesa, incluindo comprovante da IA e parcelas."""
+    gasto = GastoService.buscar_por_id(id)
+    if not gasto or gasto.id_usuario != session['id_usuario']:
+        flash('Despesa não encontrada.', 'danger')
+        return redirect(url_for('gastos.listar'))
+
+    parcelas_relacionadas = []
+    if gasto.id_parcelamento:
+        from app.models.gasto import Gasto
+        parcelas_relacionadas = (Gasto.query
+                                .filter_by(id_parcelamento=gasto.id_parcelamento, id_usuario=gasto.id_usuario)
+                                .order_by(Gasto.parcela_atual.asc())
+                                .all())
+
+    is_pdf = bool(gasto.comprovante and gasto.comprovante.lower().endswith('.pdf'))
+
+    return render_template(
+        'gastos/detalhes.html',
+        gasto=gasto,
+        parcelas_relacionadas=parcelas_relacionadas,
+        is_pdf=is_pdf
+    )
+
+
 @gastos_bp.route('/exportar')
 @login_required
 def exportar():
-    """Exporta os gastos do período filtrado como arquivo PDF elegante."""
+    """Exporta os gastos do período filtrado como PDF via PdfService centralizado."""
     mes = request.args.get('mes', type=int)
     ano = request.args.get('ano', type=int)
     id_usuario = session['id_usuario']
@@ -125,96 +219,16 @@ def exportar():
         periodo_str = f"{mes:02d}/{ano}"
         filename = f'relatorio_gastos_{mes:02d}_{ano}.pdf'
 
-    total = GastoService.calcular_total(gastos)
+    buffer = PdfService.gerar_relatorio_gastos(gastos, periodo_str, nome_usuario)
 
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
-    
-    styles = getSampleStyleSheet()
-    
-    # Estilo customizado para título e subtítulo
-    title_style = ParagraphStyle(
-        'TitleStyle',
-        parent=styles['Heading1'],
-        fontSize=18,
-        textColor=colors.HexColor("#f59e0b"), # Cor âmbar do projeto
-        spaceAfter=12,
-        alignment=1 # Center
-    )
-    
-    subtitle_style = ParagraphStyle(
-        'SubtitleStyle',
-        parent=styles['Normal'],
-        fontSize=12,
-        textColor=colors.HexColor("#718096"),
-        spaceAfter=20,
-        alignment=1 # Center
-    )
-
-    elements = []
-
-    # Cabeçalho do PDF
-    elements.append(Paragraph("Relatório de Despesas — Doce como Mel", title_style))
-    elements.append(Paragraph(f"Usuário: {nome_usuario}  |  Período: {periodo_str}", subtitle_style))
-    elements.append(Spacer(1, 0.5*cm))
-
-    # Dados da Tabela
-    data = [['Data', 'Descrição', 'Categoria', 'Forma de Pagamento', 'Valor (R$)']]
-    
-    for g in gastos:
-        data.append([
-            g.data_gasto.strftime('%d/%m/%Y'),
-            g.descricao or '—',
-            g.categoria.nome_categoria,
-            g.forma_pagamento,
-            f'R$ {g.valor:.2f}'.replace('.', ',')
-        ])
-    
-    # Linha de Total
-    data.append(['', '', '', 'TOTAL', f'R$ {total:.2f}'.replace('.', ',')])
-
-    # Estilização da Tabela
-    table = Table(data, colWidths=[2.5*cm, 5*cm, 3.5*cm, 3.5*cm, 2.5*cm])
-    style = TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1c2333")),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-        ('BACKGROUND', (0, 1), (-1, -2), colors.white),
-        ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
-        ('ALIGN', (-1, 0), (-1, -1), 'RIGHT'), # Alinha valor à direita
-        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-        ('TOPPADDING', (0, -1), (-1, -1), 10),
-        ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor("#f59e0b")),
-        ('LINEBELOW', (0, -2), (-1, -2), 1, colors.HexColor("#2d3748")),
-        ('GRID', (0, 0), (-1, -2), 0.5, colors.HexColor("#e2e8f0")),
-    ])
-    table.setStyle(style)
-    
-    elements.append(table)
-    
-    # Gera o PDF
-    doc.build(elements)
-    
-    buffer.seek(0)
-    
-    return send_file(
-        buffer,
-        as_attachment=True,
-        download_name=filename,
-        mimetype='application/pdf'
-    )
+    return send_file(buffer, as_attachment=True, download_name=filename,
+                     mimetype='application/pdf')
 
 
 @gastos_bp.route('/exportar-csv')
 @login_required
 def exportar_csv():
-    """Exporta os gastos do período filtrado como arquivo CSV."""
-    import csv
-    from io import StringIO
-    
+    """Exporta os gastos do período filtrado como CSV."""
     mes = request.args.get('mes', type=int)
     ano = request.args.get('ano', type=int)
     id_usuario = session['id_usuario']
@@ -229,14 +243,14 @@ def exportar_csv():
     si = StringIO()
     cw = csv.writer(si)
     cw.writerow(['Data', 'Descricao', 'Categoria', 'Forma de Pagamento', 'Valor'])
-    
+
     for g in gastos:
         cw.writerow([
             g.data_gasto.strftime('%d/%m/%Y'),
             g.descricao or '',
             g.categoria.nome_categoria,
             g.forma_pagamento,
-            f'{g.valor:.2f}'
+            f'{float(g.valor):.2f}'
         ])
 
     output = Response(si.getvalue().encode('utf-8-sig'), mimetype='text/csv')

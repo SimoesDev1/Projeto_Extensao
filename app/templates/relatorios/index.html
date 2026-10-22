@@ -1,0 +1,475 @@
+{% extends 'base.html' %}
+{% block title %}Relatórios Financeiros{% endblock %}
+{% block topbar_title %}<i class="bi bi-file-earmark-bar-graph"
+    style="color:var(--amber);margin-right:8px;"></i>Relatórios{% endblock %}
+{% block content %}
+
+<style>
+    /* Container com altura fixa: o Chart.js preenche o box em vez de calcular a altura pela largura */
+    .chart-box {
+        position: relative;
+        width: 100%;
+        height: 280px;
+    }
+
+    .chart-box canvas {
+        position: absolute;
+        inset: 0;
+    }
+</style>
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Central de Relatórios</h1>
+        <p class="page-subtitle">Análise visual e exportação de demonstrativos financeiros</p>
+    </div>
+</div>
+
+<!-- ── Filtro de Período ── -->
+<div class="card" style="margin-bottom:28px;">
+    <div class="card-body" style="padding:20px 24px;">
+        <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <i class="bi bi-calendar3" style="color:var(--amber); font-size:1.1rem;"></i>
+                <span style="font-weight:600; color:var(--text); font-size:0.9rem;">Período:</span>
+            </div>
+            <div class="form-group" style="width:170px; margin-bottom:0;">
+                <select id="sel-mes" class="form-select">
+                    {% set meses_nomes = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
+                    {% for m in range(1, 13) %}
+                    <option value="{{ m }}" {% if mes_atual==m %}selected{% endif %}>
+                        {{ meses_nomes[m-1] }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="width:110px; margin-bottom:0;">
+                <input type="number" id="sel-ano" class="form-control" value="{{ ano_atual }}" min="2020" max="2099">
+            </div>
+            <button id="btn-carregar" class="btn btn-primary" style="height:42px; padding:0 22px;">
+                <i class="bi bi-bar-chart-line-fill"></i> Analisar
+            </button>
+            <span id="spinner-dados" style="display:none; color:var(--text-muted); font-size:0.85rem;">
+                <i class="bi bi-arrow-repeat spin"></i> Carregando...
+            </span>
+        </div>
+    </div>
+</div>
+
+<!-- ── KPI Cards ── -->
+<div id="kpi-area" class="summary-cards" style="margin-bottom:28px;">
+    <div class="summary-card" style="border-left:4px solid var(--green);">
+        <div class="summary-card-icon" style="background:rgba(16,185,129,0.1); color:var(--green);">
+            <i class="bi bi-wallet2"></i>
+        </div>
+        <div class="summary-card-label">Receitas do Período</div>
+        <div class="summary-card-value" id="kpi-receitas" style="color:var(--green);">—</div>
+        <div id="kpi-num-receitas" style="margin-top:6px; font-size:0.75rem; color:var(--text-muted);"></div>
+    </div>
+    <div class="summary-card" style="border-left:4px solid var(--amber);">
+        <div class="summary-card-icon">
+            <i class="bi bi-receipt-cutoff"></i>
+        </div>
+        <div class="summary-card-label">Despesas do Período</div>
+        <div class="summary-card-value" id="kpi-despesas">—</div>
+        <div id="kpi-num-despesas" style="margin-top:6px; font-size:0.75rem; color:var(--text-muted);"></div>
+    </div>
+    <div class="summary-card" style="border-left:4px solid var(--indigo);">
+        <div class="summary-card-icon" style="background:rgba(99,102,241,0.1); color:var(--indigo);">
+            <i class="bi bi-piggy-bank-fill"></i>
+        </div>
+        <div class="summary-card-label">Saldo / Lucro Líquido</div>
+        <div class="summary-card-value" id="kpi-saldo">—</div>
+        <div id="kpi-saldo-label" style="margin-top:6px; font-size:0.72rem;"></div>
+    </div>
+    <div class="summary-card" style="border-left:4px solid #06b6d4;">
+        <div class="summary-card-icon" style="background:rgba(6,182,212,0.1); color:#06b6d4;">
+            <i class="bi bi-piggy-bank"></i>
+        </div>
+        <div class="summary-card-label">Taxa de Economia</div>
+        <div class="summary-card-value" id="kpi-economia" style="color:#06b6d4;">—</div>
+        <div style="margin-top:6px; font-size:0.72rem; color:var(--text-muted);">Do faturamento bruto</div>
+    </div>
+</div>
+
+<!-- ── Gráficos ── -->
+<div style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:24px;">
+
+    <!-- Evolução Mensal (linha) -->
+    <div class="card" style="flex:2; min-width:360px;">
+        <div class="card-header">
+            <span class="card-title"><i class="bi bi-graph-up-arrow"></i> Evolução dos Últimos 6 Meses</span>
+        </div>
+        <div class="card-body">
+            <div id="wrap-evolucao" class="chart-box"><canvas id="chart-evolucao"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Despesas por Categoria (doughnut) -->
+    <div class="card" style="flex:1; min-width:280px;">
+        <div class="card-header">
+            <span class="card-title"><i class="bi bi-pie-chart-fill"></i> Despesas por Categoria</span>
+        </div>
+        <div class="card-body">
+            <div id="wrap-categorias" class="chart-box"><canvas id="chart-categorias"></canvas></div>
+        </div>
+    </div>
+
+</div>
+
+<div style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:28px;">
+
+    <!-- Receitas por Tipo (bar) -->
+    <div class="card" style="flex:1; min-width:360px;">
+        <div class="card-header">
+            <span class="card-title"><i class="bi bi-bar-chart-fill"></i> Receitas por Tipo</span>
+        </div>
+        <div class="card-body">
+            <div id="wrap-tipos" class="chart-box"><canvas id="chart-tipos"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Formas de Pagamento (doughnut) -->
+    <div class="card" style="flex:1; min-width:360px;">
+        <div class="card-header">
+            <span class="card-title"><i class="bi bi-credit-card-2-back-fill"></i> Formas de Pagamento</span>
+        </div>
+        <div class="card-body">
+            <div id="wrap-formas" class="chart-box"><canvas id="chart-formas"></canvas></div>
+        </div>
+    </div>
+
+</div>
+
+<!-- ── Exportações ── -->
+<h3 style="font-size:1.05rem; font-weight:700; color:var(--text); margin-bottom:16px;">
+    <i class="bi bi-download" style="color:var(--amber); margin-right:8px;"></i>Exportar Relatórios
+</h3>
+
+<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:20px; margin-bottom:28px;">
+
+    <!-- Balanço Consolidado -->
+    <div class="card"
+        style="border-color:rgba(245,158,11,0.3); background:linear-gradient(180deg,rgba(245,158,11,0.04) 0%,var(--surface) 100%);">
+        <div class="card-body"
+            style="display:flex; flex-direction:column; gap:16px; height:100%; justify-content:space-between;">
+            <div>
+                <div
+                    style="width:44px; height:44px; border-radius:10px; background:rgba(245,158,11,0.15); display:flex; align-items:center; justify-content:center; color:var(--amber); font-size:1.4rem; margin-bottom:12px;">
+                    <i class="bi bi-file-earmark-ruled-fill"></i>
+                </div>
+                <h4 style="font-size:1.05rem; font-weight:700; color:var(--text); margin-bottom:6px;">Balanço
+                    Consolidado</h4>
+                <p style="font-size:0.83rem; color:var(--text-muted); line-height:1.55;">
+                    PDF completo com receitas, despesas, lucro líquido e taxa de economia do período.
+                </p>
+            </div>
+            <a id="btn-consolidado" href="{{ url_for('relatorios.consolidado', mes=mes_atual, ano=ano_atual) }}"
+                class="btn btn-primary" style="justify-content:center;">
+                <i class="bi bi-file-earmark-pdf-fill"></i> Baixar PDF Consolidado
+            </a>
+        </div>
+    </div>
+
+    <!-- Extrato de Despesas -->
+    <div class="card">
+        <div class="card-body"
+            style="display:flex; flex-direction:column; gap:16px; height:100%; justify-content:space-between;">
+            <div>
+                <div
+                    style="width:44px; height:44px; border-radius:10px; background:rgba(239,68,68,0.12); display:flex; align-items:center; justify-content:center; color:var(--red); font-size:1.4rem; margin-bottom:12px;">
+                    <i class="bi bi-receipt"></i>
+                </div>
+                <h4 style="font-size:1.05rem; font-weight:700; color:var(--text); margin-bottom:6px;">Extrato de
+                    Despesas</h4>
+                <p style="font-size:0.83rem; color:var(--text-muted); line-height:1.55;">
+                    Lista detalhada de todas as saídas com categorias, valores e formas de pagamento.
+                </p>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <a id="btn-gastos-pdf" href="{{ url_for('gastos.exportar', mes=mes_atual, ano=ano_atual) }}"
+                    class="btn btn-export" style="flex:1; justify-content:center;">
+                    <i class="bi bi-file-earmark-pdf-fill"></i> PDF
+                </a>
+                <a id="btn-gastos-csv" href="{{ url_for('gastos.exportar_csv', mes=mes_atual, ano=ano_atual) }}"
+                    class="btn btn-outline" style="flex:1; justify-content:center;">
+                    <i class="bi bi-file-earmark-spreadsheet-fill"></i> CSV
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Extrato de Receitas -->
+    <div class="card">
+        <div class="card-body"
+            style="display:flex; flex-direction:column; gap:16px; height:100%; justify-content:space-between;">
+            <div>
+                <div
+                    style="width:44px; height:44px; border-radius:10px; background:rgba(16,185,129,0.12); display:flex; align-items:center; justify-content:center; color:var(--green); font-size:1.4rem; margin-bottom:12px;">
+                    <i class="bi bi-wallet2"></i>
+                </div>
+                <h4 style="font-size:1.05rem; font-weight:700; color:var(--text); margin-bottom:6px;">Extrato de
+                    Receitas</h4>
+                <p style="font-size:0.83rem; color:var(--text-muted); line-height:1.55;">
+                    Todas as entradas agrupadas por tipo de receita e forma de recebimento.
+                </p>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <a id="btn-receitas-pdf" href="{{ url_for('receitas.exportar', mes=mes_atual, ano=ano_atual) }}"
+                    class="btn btn-export" style="flex:1; justify-content:center;">
+                    <i class="bi bi-file-earmark-pdf-fill"></i> PDF
+                </a>
+                <a id="btn-receitas-csv" href="{{ url_for('receitas.exportar_csv', mes=mes_atual, ano=ano_atual) }}"
+                    class="btn btn-outline" style="flex:1; justify-content:center;">
+                    <i class="bi bi-file-earmark-spreadsheet-fill"></i> CSV
+                </a>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Histórico Completo -->
+<div class="card" style="margin-bottom:32px;">
+    <div class="card-body"
+        style="display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; padding:20px 24px;">
+        <div>
+            <h4 style="color:var(--text); font-size:0.98rem; margin-bottom:4px; font-weight:700;">
+                <i class="bi bi-clock-history" style="color:var(--amber); margin-right:6px;"></i>Exportação Histórica
+                Completa
+            </h4>
+            <p style="color:var(--text-muted); font-size:0.83rem; margin:0;">Todo o histórico acumulado desde o primeiro
+                registro.</p>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <a href="{{ url_for('gastos.exportar') }}" class="btn btn-outline btn-sm">
+                <i class="bi bi-receipt"></i> Todas as Despesas (PDF)
+            </a>
+            <a href="{{ url_for('receitas.exportar') }}" class="btn btn-outline btn-sm">
+                <i class="bi bi-wallet2"></i> Todas as Receitas (PDF)
+            </a>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+    const COLORS = ['#f59e0b', '#6366f1', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#84cc16', '#14b8a6', '#a78bfa', '#fb7185'];
+
+    const fmt = v => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+    const fmtShort = v => v >= 1000 ? 'R$ ' + (v / 1000).toFixed(1).replace('.', ',') + 'k' : fmt(v);
+
+    // ── Estado dos gráficos ──
+    let charts = {};
+
+    function destroyChart(id) {
+        if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+    }
+
+    // ── Helpers de container ──
+    // Recria o <canvas> dentro do wrapper (evita reuso do Chart.js e canvas destruído por estado vazio)
+    function mountCanvas(wrapId, canvasId) {
+        const wrap = document.getElementById(wrapId);
+        if (!wrap) return null;
+        wrap.innerHTML = '';
+        const canvas = document.createElement('canvas');
+        canvas.id = canvasId;
+        wrap.appendChild(canvas);
+        return canvas;
+    }
+
+    function showEmpty(wrapId, msg) {
+        const wrap = document.getElementById(wrapId);
+        if (!wrap) return;
+        wrap.innerHTML =
+            '<div class="empty-state" style="padding:20px;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;">' +
+            '<i class="bi bi-graph-down"></i><p>' + msg + '</p></div>';
+    }
+
+    // ── Atualiza KPIs ──
+    function updateKPIs(kpis) {
+        document.getElementById('kpi-receitas').textContent = fmt(kpis.total_receitas);
+        document.getElementById('kpi-num-receitas').textContent = kpis.num_receitas + ' lançamento' + (kpis.num_receitas !== 1 ? 's' : '');
+
+        const elDesp = document.getElementById('kpi-despesas');
+        elDesp.textContent = fmt(kpis.total_despesas);
+
+        document.getElementById('kpi-num-despesas').textContent = kpis.num_despesas + ' lançamento' + (kpis.num_despesas !== 1 ? 's' : '');
+
+        const elSaldo = document.getElementById('kpi-saldo');
+        elSaldo.textContent = fmt(kpis.saldo);
+        elSaldo.style.color = kpis.saldo >= 0 ? 'var(--green)' : 'var(--red)';
+
+        const elSaldoLbl = document.getElementById('kpi-saldo-label');
+        if (kpis.saldo >= 0) {
+            elSaldoLbl.innerHTML = '<span style="color:var(--green);">✓ No positivo</span>';
+        } else {
+            elSaldoLbl.innerHTML = '<span style="color:var(--red);">⚠ Prejuízo no período</span>';
+        }
+
+        const economia = kpis.taxa_economia;
+        document.getElementById('kpi-economia').textContent = economia.toFixed(1).replace('.', ',') + '%';
+    }
+
+    // ── Gráfico de Evolução (linha) ──
+    function renderEvolucao(data) {
+        destroyChart('evolucao');
+        const canvas = mountCanvas('wrap-evolucao', 'chart-evolucao');
+        if (!canvas) return;
+        charts['evolucao'] = new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels: data.labels,
+                datasets: [
+                    {
+                        label: 'Receitas',
+                        data: data.receitas,
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16,185,129,0.08)',
+                        tension: 0.4, fill: true,
+                        pointBackgroundColor: '#10b981', pointRadius: 4, pointHoverRadius: 7
+                    },
+                    {
+                        label: 'Despesas',
+                        data: data.gastos,
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245,158,11,0.08)',
+                        tension: 0.4, fill: true,
+                        pointBackgroundColor: '#f59e0b', pointRadius: 4, pointHoverRadius: 7
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: '#e2e8f0', font: { family: "'Outfit', sans-serif", size: 12 } } },
+                    tooltip: { callbacks: { label: c => c.dataset.label + ': ' + fmt(c.parsed.y) } }
+                },
+                scales: {
+                    x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+                    y: { beginAtZero: true, ticks: { color: '#94a3b8', callback: v => fmtShort(v) }, grid: { color: 'rgba(255,255,255,0.04)' } }
+                }
+            }
+        });
+    }
+
+    // ── Gráfico Doughnut genérico ──
+    function renderDoughnut(canvasId, wrapperId, labels, values, emptyMsg) {
+        destroyChart(canvasId);
+
+        if (!labels || labels.length === 0) {
+            showEmpty(wrapperId, emptyMsg);
+            return;
+        }
+
+        const canvas = mountCanvas(wrapperId, canvasId);
+        if (!canvas) return;
+
+        charts[canvasId] = new Chart(canvas, {
+            type: 'doughnut',
+            data: {
+                labels,
+                datasets: [{ data: values, backgroundColor: COLORS, borderWidth: 0, hoverOffset: 12 }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '65%',
+                layout: { padding: 12 },
+                plugins: {
+                    legend: { position: 'bottom', labels: { color: '#e2e8f0', padding: 14, font: { family: "'Outfit', sans-serif", size: 11 } } },
+                    tooltip: { callbacks: { label: c => c.label + ': ' + fmt(c.parsed) } }
+                }
+            }
+        });
+    }
+
+    // ── Gráfico de Barras (tipos de receita) ──
+    function renderBarras(labels, values) {
+        destroyChart('tipos');
+
+        if (!labels || labels.length === 0) {
+            showEmpty('wrap-tipos', 'Sem receitas no período.');
+            return;
+        }
+
+        const canvas = mountCanvas('wrap-tipos', 'chart-tipos');
+        if (!canvas) return;
+
+        charts['tipos'] = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Receitas',
+                    data: values,
+                    backgroundColor: labels.map((_, i) => COLORS[i % COLORS.length] + 'cc'),
+                    borderColor: labels.map((_, i) => COLORS[i % COLORS.length]),
+                    borderWidth: 1.5,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: c => fmt(c.parsed.y) } }
+                },
+                scales: {
+                    x: { ticks: { color: '#94a3b8' }, grid: { display: false } },
+                    y: { beginAtZero: true, ticks: { color: '#94a3b8', callback: v => fmtShort(v) }, grid: { color: 'rgba(255,255,255,0.04)' } }
+                }
+            }
+        });
+    }
+
+    // ── Links de exportação ──
+    function updateExportLinks(mes, ano) {
+        document.getElementById('btn-consolidado').href = `{{ url_for('relatorios.consolidado') }}?mes=${mes}&ano=${ano}`;
+        document.getElementById('btn-gastos-pdf').href = `{{ url_for('gastos.exportar') }}?mes=${mes}&ano=${ano}`;
+        document.getElementById('btn-gastos-csv').href = `{{ url_for('gastos.exportar_csv') }}?mes=${mes}&ano=${ano}`;
+        document.getElementById('btn-receitas-pdf').href = `{{ url_for('receitas.exportar') }}?mes=${mes}&ano=${ano}`;
+        document.getElementById('btn-receitas-csv').href = `{{ url_for('receitas.exportar_csv') }}?mes=${mes}&ano=${ano}`;
+    }
+
+    // ── Carrega dados e renderiza tudo ──
+    async function carregarDados() {
+        const mes = document.getElementById('sel-mes').value;
+        const ano = document.getElementById('sel-ano').value;
+        const spinner = document.getElementById('spinner-dados');
+        const btn = document.getElementById('btn-carregar');
+
+        spinner.style.display = 'inline-flex';
+        btn.disabled = true;
+
+        updateExportLinks(mes, ano);
+
+        try {
+            const resp = await fetch(`{{ url_for('relatorios.api_dados') }}?mes=${mes}&ano=${ano}`);
+            if (!resp.ok) throw new Error('Erro ao buscar dados');
+            const data = await resp.json();
+
+            updateKPIs(data.kpis);
+            renderEvolucao(data.evolucao);
+            renderDoughnut('chart-categorias', 'wrap-categorias', data.categorias.labels, data.categorias.values, 'Sem despesas no período.');
+            renderBarras(data.tipos_receita.labels, data.tipos_receita.values);
+            renderDoughnut('chart-formas', 'wrap-formas', data.formas_pagamento.labels, data.formas_pagamento.values, 'Sem pagamentos no período.');
+        } catch (e) {
+            console.error(e);
+        } finally {
+            spinner.style.display = 'none';
+            btn.disabled = false;
+        }
+    }
+
+    // ── Init ──
+    document.getElementById('btn-carregar').addEventListener('click', carregarDados);
+    document.addEventListener('DOMContentLoaded', carregarDados);
+</script>
+{% endblock %}

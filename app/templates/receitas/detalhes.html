@@ -1,0 +1,149 @@
+{% extends 'base.html' %}
+{% block title %}Detalhes da Receita #{{ receita.id_receita }}{% endblock %}
+{% block topbar_title %}<i class="bi bi-cash-stack" style="color:var(--green);margin-right:8px;"></i>Detalhes da Receita{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <h1 class="page-title">Receita #{{ receita.id_receita }}</h1>
+            <span class="badge badge-success" style="font-size: 0.8rem; padding: 4px 10px;">
+                {{ receita.tipo_receita or 'Venda' }}
+            </span>
+            {% if receita.comprovante %}
+            <span class="badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); font-size: 0.8rem; padding: 4px 10px;">
+                <i class="bi bi-paperclip"></i> Comprovante Anexado
+            </span>
+            {% endif %}
+        </div>
+        <p class="page-subtitle">Entrada registrada em {{ receita.data_receita.strftime('%d/%m/%Y') }}</p>
+    </div>
+    <div style="display:flex; gap:10px;">
+        <a href="{{ url_for('receitas.listar') }}" class="btn btn-outline btn-sm">
+            <i class="bi bi-arrow-left"></i> Voltar
+        </a>
+        <a href="{{ url_for('receitas.editar', id=receita.id_receita) }}" class="btn btn-outline btn-sm">
+            <i class="bi bi-pencil"></i> Editar
+        </a>
+        <form method="POST" action="{{ url_for('receitas.excluir', id=receita.id_receita) }}"
+              data-confirm="Tem certeza que deseja excluir esta receita (R$ {{ '%.2f'|format(receita.valor)|replace('.',',') }})?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-danger btn-sm">
+                <i class="bi bi-trash3"></i> Excluir
+            </button>
+        </form>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
+
+    <!-- COLUNA DA ESQUERDA: DADOS DA RECEITA -->
+    <div style="display:flex; flex-direction:column; gap:20px;">
+
+        <!-- CARD PRINCIPAL DE DADOS -->
+        <div class="card">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3 class="card-title">Informações de Entrada</h3>
+                <span class="badge badge-success">{{ receita.tipo_receita or 'Venda' }}</span>
+            </div>
+            <div class="card-body">
+                <div style="margin-bottom: 20px;">
+                    <span style="font-size: 0.82rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Valor Recebido</span>
+                    <div style="font-size: 2.2rem; font-weight: 800; color: var(--green); margin-top: 4px;">
+                        R$ {{ "%.2f"|format(receita.valor)|replace('.',',') }}
+                    </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom: 16px;">
+                    <div>
+                        <span style="font-size:0.8rem; color:var(--text-subtle); display:block;">Data do Recebimento</span>
+                        <strong style="color:var(--text-primary); font-size:0.95rem;">
+                            <i class="bi bi-calendar3" style="color:var(--green); margin-right:4px;"></i>
+                            {{ receita.data_receita.strftime('%d/%m/%Y') }}
+                        </strong>
+                    </div>
+                    <div>
+                        <span style="font-size:0.8rem; color:var(--text-subtle); display:block;">Forma de Recebimento</span>
+                        <strong style="color:var(--text-primary); font-size:0.95rem;">
+                            <i class="bi bi-wallet2" style="color:#c084fc; margin-right:4px;"></i>
+                            {{ receita.forma_recebimento }}
+                        </strong>
+                    </div>
+                </div>
+
+                <div style="border-top: 1px solid var(--border); padding-top: 14px;">
+                    <span style="font-size:0.8rem; color:var(--text-subtle); display:block;">Descrição da Venda / Origem</span>
+                    <p style="color:var(--text-primary); font-size:0.95rem; margin-top:4px; line-height: 1.5;">
+                        {{ receita.descricao or 'Nenhuma descrição informada.' }}
+                    </p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- COLUNA DA DIREITA: COMPROVANTE DIGITALIZADO DA IA -->
+    <div class="card" style="position: sticky; top: 90px;">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <h3 class="card-title">Comprovante / Recibo Fiscal</h3>
+                <span class="card-subtitle">Arquivo capturado via IA ou anexo</span>
+            </div>
+            {% if receita.comprovante %}
+            <a href="{{ url_for('servir_comprovante', filename=receita.comprovante) }}" target="_blank"
+               class="btn btn-outline btn-sm" title="Abrir em tela cheia">
+                <i class="bi bi-arrows-fullscreen"></i> Expandir
+            </a>
+            {% endif %}
+        </div>
+        <div class="card-body" style="padding: 16px; text-align:center;">
+            {% if receita.comprovante %}
+                {% if is_pdf %}
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 32px 16px; margin-bottom: 12px;">
+                        <i class="bi bi-file-earmark-pdf-fill" style="font-size: 3.5rem; color: var(--red);"></i>
+                        <p style="font-size: 0.95rem; color: var(--text-primary); margin-top: 10px; font-weight:600;">Comprovante em PDF</p>
+                        <p style="font-size: 0.8rem; color: var(--text-muted);">{{ receita.comprovante }}</p>
+                        <div style="display:flex; justify-content:center; gap:10px; margin-top: 16px;">
+                            <a href="{{ url_for('servir_comprovante', filename=receita.comprovante) }}" target="_blank" class="btn btn-primary btn-sm">
+                                <i class="bi bi-box-arrow-up-right"></i> Abrir PDF
+                            </a>
+                            <a href="{{ url_for('servir_comprovante', filename=receita.comprovante) }}" download class="btn btn-outline btn-sm">
+                                <i class="bi bi-download"></i> Baixar
+                            </a>
+                        </div>
+                    </div>
+                {% else %}
+                    <div style="max-height: 540px; overflow-y: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); background: #000; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);">
+                        <a href="{{ url_for('servir_comprovante', filename=receita.comprovante) }}" target="_blank" title="Clique para ampliar">
+                            <img src="{{ url_for('servir_comprovante', filename=receita.comprovante) }}"
+                                 alt="Comprovante de Receita"
+                                 style="width: 100%; height: auto; display: block; object-fit: contain; cursor: zoom-in;">
+                        </a>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 12px; font-size:0.8rem; color:var(--text-muted);">
+                        <span><i class="bi bi-info-circle"></i> Clique na imagem para zoom</span>
+                        <a href="{{ url_for('servir_comprovante', filename=receita.comprovante) }}" download class="btn btn-ghost btn-sm">
+                            <i class="bi bi-download"></i> Baixar Imagem
+                        </a>
+                    </div>
+                {% endif %}
+            {% else %}
+                <div class="empty-state" style="padding: 48px 16px;">
+                    <i class="bi bi-file-earmark-x" style="font-size: 3rem; color: var(--text-subtle);"></i>
+                    <p style="font-weight:600; margin-top:10px; color:var(--text-muted);">Nenhum comprovante anexado</p>
+                    <span style="font-size: 0.8rem; color: var(--text-subtle); max-width: 280px; display:inline-block; margin-top:4px;">
+                        Lançamentos confirmados pela ferramenta <strong>Ler Nota com IA</strong> salvam automaticamente o comprovante aqui.
+                    </span>
+                    <div style="margin-top: 16px;">
+                        <a href="{{ url_for('ia_fiscal.upload') }}" class="btn btn-outline btn-sm" style="border-color:#a855f7; color:#c084fc;">
+                            <i class="bi bi-stars"></i> Usar Leitor de IA
+                        </a>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}

@@ -20,7 +20,8 @@
             {% endif %}
         {% endwith %}
 
-        <form method="POST">
+        <form method="POST" data-loading>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="form-group">
                 <label class="form-label">Nome de Usuário</label>
                 <input type="text" name="nome_usuario" class="form-control"
@@ -29,7 +30,7 @@
             <div class="form-group">
                 <label class="form-label">Senha</label>
                 <input type="password" name="senha" class="form-control"
-                       placeholder="Crie uma senha segura" required autocomplete="new-password">
+                       placeholder="Crie uma senha segura (mín. 6 caracteres)" required autocomplete="new-password">
             </div>
             <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center; margin-top:4px;">
                 <i class="bi bi-person-plus-fill"></i> Criar Conta

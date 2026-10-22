@@ -19,7 +19,8 @@
         <span class="form-card-title">Dados da Despesa</span>
     </div>
     <div class="form-card-body">
-        <form method="POST">
+        <form method="POST" data-loading>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="form-group">
                 <label class="form-label">Descrição <span style="color:var(--text-subtle);font-weight:400;">(opcional)</span></label>
                 <input type="text" name="descricao" class="form-control"

@@ -20,7 +20,8 @@
             {% endif %}
         {% endwith %}
 
-        <form method="POST">
+        <form method="POST" data-loading>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="form-group">
                 <label class="form-label">Usuário</label>
                 <input type="text" name="nome_usuario" class="form-control"

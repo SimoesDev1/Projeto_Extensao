@@ -1,0 +1,149 @@
+{% extends 'base.html' %}
+{% block title %}Leitor de Notas com IA{% endblock %}
+{% block topbar_title %}<i class="bi bi-stars" style="color:#c084fc;margin-right:8px;"></i>Leitor de Notas com IA{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Leitor Inteligente de Notas Fiscais</h1>
+        <p class="page-subtitle">Envie uma foto ou PDF do comprovante e nossa IA extrairá os dados, valores e categorias automaticamente</p>
+    </div>
+    {% if tem_chave_api %}
+        <span class="badge" style="background:rgba(16,185,129,0.15); color:var(--green); border:1px solid rgba(16,185,129,0.3); font-size:0.8rem; padding:6px 14px;">
+            <i class="bi bi-check-circle-fill" style="margin-right:6px;"></i> Gemini Vision Conectado
+        </span>
+    {% else %}
+        <span class="badge" style="background:rgba(245,158,11,0.15); color:var(--amber); border:1px solid rgba(245,158,11,0.3); font-size:0.8rem; padding:6px 14px;" title="Insira sua GEMINI_API_KEY no arquivo .env">
+            <i class="bi bi-info-circle-fill" style="margin-right:6px;"></i> Modo Demonstração
+        </span>
+    {% endif %}
+</div>
+
+<!-- CARD PRINCIPAL DE UPLOAD -->
+<div class="form-card" style="max-width: 760px;">
+    <div class="form-card-header" style="justify-content: space-between;">
+        <div style="display:flex; align-items:center; gap:12px;">
+            <i class="bi bi-cpu-fill" style="color:#c084fc; font-size:1.3rem;"></i>
+            <span class="form-card-title">Upload de Documento Fiscal</span>
+        </div>
+        <span style="font-size:0.8rem; color:var(--text-muted);">Formatos: JPG, PNG, WEBP, PDF (Máx. 10MB)</span>
+    </div>
+    <div class="form-card-body">
+        <form method="POST" action="{{ url_for('ia_fiscal.processar') }}" enctype="multipart/form-data" data-loading id="form-upload-ia">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <!-- ZONA DE DRAG & DROP -->
+            <div id="drop-zone" class="drop-zone" style="border: 2px dashed rgba(192,132,252,0.4); border-radius: var(--radius-md); padding: 48px 24px; text-align: center; background: rgba(192,132,252,0.03); cursor: pointer; transition: var(--transition);">
+                <div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(192,132,252,0.12); color: #c084fc; font-size: 2rem; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                    <i class="bi bi-cloud-arrow-up-fill"></i>
+                </div>
+                <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text); margin-bottom: 6px;">
+                    Arraste sua nota fiscal aqui ou clique para selecionar
+                </h3>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 18px;">
+                    Funciona com fotos tiradas pelo celular, cupons de mercado, DANFE de NF-e e comprovantes de PIX
+                </p>
+
+                <input type="file" name="documento" id="input-file" accept="image/*,application/pdf" style="display: none;" required>
+
+                <button type="button" class="btn btn-outline" onclick="document.getElementById('input-file').click();">
+                    <i class="bi bi-folder2-open"></i> Escolher Arquivo do Dispositivo
+                </button>
+
+                <div id="file-info" style="display: none; margin-top: 16px; padding: 10px 16px; background: var(--surface-2); border-radius: var(--radius-sm); border: 1px solid var(--border); display: none; align-items: center; justify-content: center; gap: 8px;">
+                    <i class="bi bi-file-earmark-check" style="color: #c084fc;"></i>
+                    <span id="file-name" style="font-size: 0.88rem; font-weight: 600; color: var(--text);"></span>
+                </div>
+            </div>
+
+            <div class="form-actions" style="margin-top: 24px;">
+                <button type="submit" id="btn-submit-ia" class="btn btn-primary" style="width: 100%; justify-content: center; height: 46px; font-size: 1rem; background: linear-gradient(135deg, #a855f7, #7c3aed); border: none;">
+                    <i class="bi bi-stars"></i> Interpretar Nota com Inteligência Artificial
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- GUIA DE O QUE A IA CONSEGUE FAZER -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; max-width: 760px; margin: 28px auto 0;">
+    <div class="card" style="padding: 20px;">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
+            <div style="width:36px; height:36px; border-radius:8px; background:rgba(239,68,68,0.12); color:var(--red); display:flex; align-items:center; justify-content:center; font-size:1.1rem;">
+                <i class="bi bi-basket3-fill"></i>
+            </div>
+            <h4 style="font-size:0.95rem; font-weight:700; color:var(--text);">Compras & Insumos</h4>
+        </div>
+        <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.5;">
+            A IA separa os itens comprados (leite condensado, farinha, morangos, formas) e sugere a categoria de despesa exata para cada um.
+        </p>
+    </div>
+
+    <div class="card" style="padding: 20px;">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
+            <div style="width:36px; height:36px; border-radius:8px; background:rgba(16,185,129,0.12); color:var(--green); display:flex; align-items:center; justify-content:center; font-size:1.1rem;">
+                <i class="bi bi-cash-stack"></i>
+            </div>
+            <h4 style="font-size:0.95rem; font-weight:700; color:var(--text);">Vendas & Comprovantes</h4>
+        </div>
+        <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.5;">
+            Detecta comprovantes de PIX ou recibos de vendas para clientes e lança diretamente no módulo de Receitas.
+        </p>
+    </div>
+
+    <div class="card" style="padding: 20px;">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
+            <div style="width:36px; height:36px; border-radius:8px; background:rgba(245,158,11,0.12); color:var(--amber); display:flex; align-items:center; justify-content:center; font-size:1.1rem;">
+                <i class="bi bi-pencil-square"></i>
+            </div>
+            <h4 style="font-size:0.95rem; font-weight:700; color:var(--text);">Revisão Humana</h4>
+        </div>
+        <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.5;">
+            Você sempre revisa os dados na tela seguinte antes de salvar, podendo alterar valores, categorias ou formas de pagamento.
+        </p>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const dropZone = document.getElementById('drop-zone');
+    const inputFile = document.getElementById('input-file');
+    const fileInfo = document.getElementById('file-info');
+    const fileName = document.getElementById('file-name');
+
+    inputFile.addEventListener('change', () => {
+        if (inputFile.files.length > 0) {
+            const file = inputFile.files[0];
+            fileName.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+            fileInfo.style.display = 'inline-flex';
+            dropZone.style.borderColor = '#a855f7';
+            dropZone.style.background = 'rgba(168,85,247,0.08)';
+        }
+    });
+
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.style.borderColor = '#c084fc';
+        dropZone.style.background = 'rgba(192,132,252,0.1)';
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.style.borderColor = 'rgba(192,132,252,0.4)';
+        dropZone.style.background = 'rgba(192,132,252,0.03)';
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        if (e.dataTransfer.files.length > 0) {
+            inputFile.files = e.dataTransfer.files;
+            const file = e.dataTransfer.files[0];
+            fileName.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+            fileInfo.style.display = 'inline-flex';
+            dropZone.style.borderColor = '#a855f7';
+            dropZone.style.background = 'rgba(168,85,247,0.08)';
+        }
+    });
+</script>
+{% endblock %}

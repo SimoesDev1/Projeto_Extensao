@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}Nova Categoria{% endblock %}
+{% block topbar_title %}<i class="bi bi-tag" style="color:var(--amber);margin-right:8px;"></i>Nova Categoria{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Nova Categoria</h1>
+        <p class="page-subtitle">Crie um novo grupo para categorizar suas despesas</p>
+    </div>
+    <a href="{{ url_for('categorias.listar') }}" class="btn btn-outline btn-sm">
+        <i class="bi bi-arrow-left"></i> Voltar
+    </a>
+</div>
+
+<div class="form-card">
+    <div class="form-card-header">
+        <i class="bi bi-plus-circle-fill"></i>
+        <span class="form-card-title">Dados da Categoria</span>
+    </div>
+    <div class="form-card-body">
+        <form method="POST" data-loading>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="form-group">
+                <label class="form-label">Nome da Categoria <span style="color:var(--red);">*</span></label>
+                <input type="text" name="nome_categoria" class="form-control"
+                       placeholder="Ex: Embalagens, Ingredientes, Marketing..." required autofocus>
+                <p style="font-size:0.75rem; color:var(--text-subtle); margin-top:8px;">
+                    <i class="bi bi-info-circle"></i> O nome deve ser único e descrever o tipo de gasto.
+                </p>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle-fill"></i> Criar Categoria
+                </button>
+                <a href="{{ url_for('categorias.listar') }}" class="btn btn-outline">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}

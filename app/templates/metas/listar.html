@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+{% block title %}Metas e Orçamentos{% endblock %}
+{% block topbar_title %}<i class="bi bi-bullseye" style="color:var(--amber);margin-right:8px;"></i>Metas de Gastos{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Metas de Gastos & Orçamentos</h1>
+        <p class="page-subtitle">Acompanhe seus limites de gastos por categoria em {{ "%02d"|format(mes) }}/{{ ano }}</p>
+    </div>
+</div>
+
+<!-- Filtro de Período -->
+<div class="card" style="margin-bottom: 24px;">
+    <div class="card-body" style="padding: 16px 20px;">
+        <form method="GET" style="display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap;">
+            <div class="form-group" style="width: 140px;">
+                <label class="form-label">Mês</label>
+                <select name="mes" class="form-select">
+                    {% set meses_nomes = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
+                    {% for m in range(1, 13) %}
+                    <option value="{{ m }}" {% if mes == m %}selected{% endif %}>
+                        {{ meses_nomes[m-1] }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="width: 100px;">
+                <label class="form-label">Ano</label>
+                <input type="number" name="ano" class="form-control" value="{{ ano }}" min="2020" max="2099">
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm" style="height:38px;">
+                <i class="bi bi-funnel-fill"></i> Ver Período
+            </button>
+        </form>
+    </div>
+</div>
+
+<div style="display:grid; grid-template-columns: 1fr 340px; gap: 24px; align-items: start;">
+
+    <!-- LISTA DE METAS COM PROGRESSO -->
+    <div class="card">
+        <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;">
+            <div>
+                <h3 class="card-title">Orçamentos Definidos</h3>
+                <span class="card-subtitle">{{ progresso|length }} meta(s) para este mês</span>
+            </div>
+        </div>
+        <div class="card-body">
+            {% if progresso %}
+                <div style="display:flex; flex-direction:column; gap:20px;">
+                    {% for item in progresso %}
+                    <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-md); padding:16px 20px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <span class="badge badge-default" style="font-size:0.85rem;">{{ item.cat_nome }}</span>
+                                {% if item.excedeu %}
+                                <span class="badge badge-danger">
+                                    <i class="bi bi-exclamation-triangle-fill" style="margin-right:4px;"></i> Excedido
+                                </span>
+                                {% elif item.pct >= 80 %}
+                                <span class="badge" style="background:rgba(245,158,11,0.15); color:var(--amber); border:1px solid rgba(245,158,11,0.3);">
+                                    <i class="bi bi-exclamation-circle" style="margin-right:4px;"></i> Atenção (≥ 80%)
+                                </span>
+                                {% else %}
+                                <span class="badge badge-success">
+                                    <i class="bi bi-check-circle" style="margin-right:4px;"></i> No Limite
+                                </span>
+                                {% endif %}
+                            </div>
+                            
+                            <!-- Ação excluir -->
+                            <form method="POST" action="{{ url_for('metas.excluir', id=item.meta.id_meta) }}"
+                                  data-confirm="Deseja remover o orçamento para a categoria '{{ item.cat_nome }}'?">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-ghost btn-sm btn-icon" title="Remover meta" style="color:var(--red);">
+                                    <i class="bi bi-trash3"></i>
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Barra de Progresso -->
+                        <div class="progress-bar-container" style="height:10px; margin: 12px 0 8px 0; background:rgba(255,255,255,0.06);">
+                            <div class="progress-bar-fill {% if item.excedeu %}danger{% elif item.pct >= 80 %}warning{% endif %}"
+                                 style="width: {{ item.pct }}%; {% if item.excedeu %}background:linear-gradient(90deg, #ef4444, #dc2626);{% elif item.pct >= 80 %}background:linear-gradient(90deg, #f59e0b, #d97706);{% endif %}"></div>
+                        </div>
+
+                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.82rem;">
+                            <span style="color:var(--text-muted);">
+                                Gasto: <strong style="color:{% if item.excedeu %}var(--red){% else %}var(--text){% endif %};">R$ {{ "%.2f"|format(item.gasto_real)|replace('.',',') }}</strong> 
+                                / Limite: <strong>R$ {{ "%.2f"|format(item.limite)|replace('.',',') }}</strong>
+                            </span>
+                            <span style="font-weight:700; color:{% if item.excedeu %}var(--red){% elif item.pct >= 80 %}var(--amber){% else %}var(--green){% endif %};">
+                                {{ "%.1f"|format((item.gasto_real / item.limite) * 100) if item.limite > 0 else 0 }}%
+                            </span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <i class="bi bi-bullseye"></i>
+                    <p>Nenhuma meta de orçamento definida para este mês.<br>Utilize o formulário ao lado para cadastrar seu primeiro limite!</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- FORM PARA CRIAR / ATUALIZAR META -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Definir Orçamento</h3>
+            <span class="card-subtitle">Mês {{ "%02d"|format(mes) }}/{{ ano }}</span>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('metas.salvar') }}" data-loading>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="mes" value="{{ mes }}">
+                <input type="hidden" name="ano" value="{{ ano }}">
+
+                <div class="form-group">
+                    <label class="form-label">Categoria <span style="color:var(--red);">*</span></label>
+                    <select name="id_categoria" class="form-select" required>
+                        <option value="" disabled selected>Escolha uma categoria</option>
+                        {% for cat in categorias %}
+                        <option value="{{ cat.id_categoria }}">{{ cat.nome_categoria }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Limite Mensal (R$) <span style="color:var(--red);">*</span></label>
+                    <input type="number" step="0.01" min="0.01" name="valor_limite"
+                           class="form-control" placeholder="Ex: 500.00" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center; margin-top:8px;">
+                    <i class="bi bi-check-circle-fill"></i> Salvar Meta
+                </button>
+            </form>
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}

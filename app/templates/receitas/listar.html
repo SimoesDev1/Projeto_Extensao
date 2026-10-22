@@ -8,23 +8,37 @@
         <h1 class="page-title">Receitas / Ganhos</h1>
         <p class="page-subtitle">
             {% if mes and ano %}
-                Exibindo {{ receitas|length }} registro(s) em {{ "%02d"|format(mes) }}/{{ ano }}
+                Exibindo registros de {{ "%02d"|format(mes) }}/{{ ano }}
             {% else %}
-                Todos os ganhos registrados
+                Todos os ganhos registrados (Página {{ paginacao.page }} de {{ paginacao.pages or 1 }})
             {% endif %}
+            {% if busca %} • Busca: "{{ busca }}"{% endif %}
         </p>
     </div>
-    <a href="{{ url_for('receitas.nova') }}" class="btn btn-success">
-        <i class="bi bi-plus-circle-fill"></i> Nova Receita
-    </a>
+    <div style="display:flex; gap:10px;">
+        <a href="{{ url_for('ia_fiscal.upload') }}" class="btn btn-outline" style="border-color:#a855f7; color:#c084fc;">
+            <i class="bi bi-stars"></i> Ler Comprovante com IA
+        </a>
+        <a href="{{ url_for('receitas.nova') }}" class="btn btn-success">
+            <i class="bi bi-plus-circle-fill"></i> Nova Receita
+        </a>
+    </div>
 </div>
 
 <div class="card">
     <div class="filter-bar">
         <form method="GET" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; flex:1;">
-            <div class="form-group">
+            <!-- Busca textual -->
+            <div class="form-group" style="flex: 1; min-width: 180px;">
+                <label class="form-label">Buscar</label>
+                <input type="text" name="busca" class="form-control"
+                       placeholder="Buscar por descrição..." value="{{ busca }}">
+            </div>
+
+            <!-- Mês -->
+            <div class="form-group" style="width: 120px;">
                 <label class="form-label">Mês</label>
-                <select name="mes" class="form-select" style="width:130px;">
+                <select name="mes" class="form-select">
                     <option value="">Todos</option>
                     {% set meses_nomes = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
                     {% for m in range(1, 13) %}
@@ -34,16 +48,19 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="form-group">
+
+            <!-- Ano -->
+            <div class="form-group" style="width: 90px;">
                 <label class="form-label">Ano</label>
-                <input type="number" name="ano" class="form-control" style="width:90px;"
+                <input type="number" name="ano" class="form-control"
                        placeholder="Ano" value="{{ ano or '' }}" min="2020" max="2099">
             </div>
-            <button type="submit" class="btn btn-primary btn-sm">
-                <i class="bi bi-filter"></i> Filtrar
+
+            <button type="submit" class="btn btn-primary btn-sm" style="height: 38px;">
+                <i class="bi bi-funnel-fill"></i> Filtrar
             </button>
-            {% if mes or ano %}
-            <a href="{{ url_for('receitas.listar') }}" class="btn btn-outline btn-sm">
+            {% if mes or ano or busca %}
+            <a href="{{ url_for('receitas.listar') }}" class="btn btn-outline btn-sm" style="height: 38px;" title="Limpar filtros">
                 <i class="bi bi-x-circle"></i> Limpar
             </a>
             {% endif %}
@@ -63,21 +80,23 @@
             {% else %}
             <a href="{{ url_for('receitas.exportar') }}"
                class="btn btn-export btn-sm" title="Baixar todos os dados em PDF">
-                <i class="bi bi-file-earmark-pdf-fill"></i> Exportar Tudo (PDF)
+                <i class="bi bi-file-earmark-pdf-fill"></i> PDF
             </a>
             <a href="{{ url_for('receitas.exportar_csv') }}"
                class="btn btn-outline btn-sm" title="Baixar todos os dados em CSV">
-                <i class="bi bi-file-earmark-spreadsheet-fill"></i> Exportar Tudo (CSV)
+                <i class="bi bi-file-earmark-spreadsheet-fill"></i> CSV
             </a>
             {% endif %}
         </div>
     </div>
 
+    <!-- Tabela de Receitas -->
     <table class="table">
         <thead>
             <tr>
                 <th>Data</th>
                 <th>Descrição</th>
+                <th>Tipo</th>
                 <th>Recebimento</th>
                 <th>Valor</th>
                 <th style="text-align:right;">Ações</th>
@@ -86,33 +105,117 @@
         <tbody>
             {% for receita in receitas %}
             <tr>
-                <td style="color:var(--text-muted); font-size:0.82rem;">{{ receita.data_receita.strftime('%d/%m/%Y') }}</td>
-                <td>{{ receita.descricao or '—' }}</td>
-                <td><span class="badge badge-success">{{ receita.forma_recebimento }}</span></td>
-                <td class="valor-positivo">R$ {{ "%.2f"|format(receita.valor)|replace(".",",") }}</td>
+                <td style="white-space:nowrap; color:var(--text-muted); font-size:0.82rem;">
+                    {{ receita.data_receita.strftime('%d/%m/%Y') }}
+                </td>
+                <td>
+                    <a href="{{ url_for('receitas.detalhes', id=receita.id_receita) }}" style="color:var(--text-primary); text-decoration:none; font-weight:500;">
+                        {{ receita.descricao or '—' }}
+                    </a>
+                    {% if receita.comprovante %}
+                    <a href="{{ url_for('receitas.detalhes', id=receita.id_receita) }}" class="badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); font-size: 0.72rem; padding: 2px 7px; margin-left: 4px; text-decoration:none;" title="Possui comprovante / nota fiscal anexada">
+                        <i class="bi bi-paperclip"></i> Anexo
+                    </a>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="badge badge-success">{{ receita.tipo_receita or 'Venda' }}</span>
+                </td>
+                <td style="color:var(--text-muted); font-size:0.85rem;">{{ receita.forma_recebimento }}</td>
+                <td class="valor-positivo" style="white-space:nowrap;">
+                    R$ {{ "%.2f"|format(receita.valor)|replace(".",",") }}
+                </td>
                 <td>
                     <div style="display:flex; gap:6px; justify-content:flex-end;">
-                        <a href="{{ url_for('receitas.editar', id=receita.id_receita) }}" class="btn btn-ghost btn-sm btn-icon"><i class="bi bi-pencil"></i></a>
-                        <form method="POST" action="{{ url_for('receitas.excluir', id=receita.id_receita) }}" onsubmit="return confirm('Deseja excluir esta receita?')">
-                            <button type="submit" class="btn btn-danger btn-sm btn-icon"><i class="bi bi-trash3"></i></button>
+                        <a href="{{ url_for('receitas.detalhes', id=receita.id_receita) }}"
+                           class="btn btn-ghost btn-sm btn-icon" title="Ver Detalhes" style="color:#60a5fa;">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        <a href="{{ url_for('receitas.editar', id=receita.id_receita) }}"
+                           class="btn btn-ghost btn-sm btn-icon" title="Editar">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                        <form method="POST" action="{{ url_for('receitas.excluir', id=receita.id_receita) }}"
+                              data-confirm="Tem certeza que deseja excluir esta receita (R$ {{ '%.2f'|format(receita.valor)|replace('.',',') }})?">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-danger btn-sm btn-icon" title="Excluir">
+                                <i class="bi bi-trash3"></i>
+                            </button>
                         </form>
                     </div>
                 </td>
             </tr>
             {% else %}
-            <tr><td colspan="5"><div class="empty-state"><i class="bi bi-inbox"></i><p>Nenhuma receita encontrada.</p></div></td></tr>
+            <tr>
+                <td colspan="6">
+                    <div class="empty-state">
+                        <i class="bi bi-inbox"></i>
+                        <p>Nenhuma receita encontrada para os critérios informados.</p>
+                    </div>
+                </td>
+            </tr>
             {% endfor %}
         </tbody>
-        {% if mes and ano and receitas %}
+
+        <!-- Linha de total na página -->
+        {% if receitas %}
         <tfoot>
             <tr class="table-total">
-                <td colspan="3">Total de Receitas no Período</td>
-                <td class="valor-positivo">R$ {{ "%.2f"|format(total)|replace(".",",") }}</td>
+                <td colspan="4" style="color:var(--text-muted); font-size:0.85rem;">
+                    Total listado nesta página ({{ receitas|length }} itens)
+                </td>
+                <td class="valor-positivo" style="white-space:nowrap;">
+                    R$ {{ "%.2f"|format(total)|replace(".",",") }}
+                </td>
                 <td></td>
             </tr>
         </tfoot>
         {% endif %}
     </table>
+
+    <!-- Paginação -->
+    {% if paginacao and paginacao.pages > 1 %}
+    <div class="pagination-container">
+        <div class="pagination-info">
+            Página {{ paginacao.page }} de {{ paginacao.pages }} (Total: {{ paginacao.total }} registros)
+        </div>
+        <div class="pagination-controls">
+            <!-- Anterior -->
+            {% if paginacao.has_prev %}
+            <a href="{{ url_for('receitas.listar', page=paginacao.prev_num, mes=mes, ano=ano, busca=busca) }}"
+               class="page-btn" title="Página anterior">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+            {% else %}
+            <span class="page-btn disabled"><i class="bi bi-chevron-left"></i></span>
+            {% endif %}
+
+            <!-- Números de Página -->
+            {% for p in paginacao.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                {% if p %}
+                    {% if p == paginacao.page %}
+                        <span class="page-btn active">{{ p }}</span>
+                    {% else %}
+                        <a href="{{ url_for('receitas.listar', page=p, mes=mes, ano=ano, busca=busca) }}"
+                           class="page-btn">{{ p }}</a>
+                    {% endif %}
+                {% else %}
+                    <span class="page-btn disabled">…</span>
+                {% endif %}
+            {% endfor %}
+
+            <!-- Próximo -->
+            {% if paginacao.has_next %}
+            <a href="{{ url_for('receitas.listar', page=paginacao.next_num, mes=mes, ano=ano, busca=busca) }}"
+               class="page-btn" title="Próxima página">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+            {% else %}
+            <span class="page-btn disabled"><i class="bi bi-chevron-right"></i></span>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 {% endblock %}

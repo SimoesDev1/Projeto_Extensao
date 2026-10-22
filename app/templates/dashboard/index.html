@@ -6,11 +6,15 @@
 <div class="page-header">
     <div>
         <h1 class="page-title">Olá, {{ session.get('nome_usuario', 'Visitante') }}! 👋</h1>
-        <p class="page-subtitle">Aqui está o que aconteceu com suas finanças neste mês.</p>
+        <p class="page-subtitle">Resumo financeiro do período selecionado.</p>
     </div>
-    
-    <div class="card" style="margin-bottom:0; padding: 12px 20px; background: rgba(255,255,255,0.03);">
-        <form method="GET" style="display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap;">
+
+    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+        <a href="{{ url_for('ia_fiscal.upload') }}" class="btn btn-primary" style="background:linear-gradient(135deg, #a855f7, #7c3aed); border:none; height:42px; padding:0 18px; box-shadow:0 4px 15px rgba(168,85,247,0.25);">
+            <i class="bi bi-stars"></i> Ler Nota Fiscal com IA
+        </a>
+        <div class="card" style="margin-bottom:0; padding: 12px 20px; background: rgba(255,255,255,0.03);">
+            <form method="GET" style="display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap;">
             <div class="form-group" style="margin-bottom:0;">
                 <label class="form-label">Mês</label>
                 <select name="mes" class="form-select" style="width:130px; height:38px;">
@@ -31,8 +35,25 @@
                 <i class="bi bi-filter"></i> Filtrar
             </button>
         </form>
+        </div>
     </div>
 </div>
+
+{% if alertas %}
+<div class="anomaly-alerts" style="margin-bottom:24px;">
+    {% for alerta in alertas %}
+    <div class="alert-anomalia">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <span>
+            <strong>{{ alerta.categoria }}</strong>: gasto de
+            <strong>R$ {{ "%.2f"|format(alerta.total_atual)|replace(".",",") }}</strong>
+            está <strong>{{ alerta.variacao_pct }}% acima</strong> da média histórica
+            (R$ {{ "%.2f"|format(alerta.media_historica)|replace(".",",") }}).
+        </span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
 
 <!-- KPI Cards -->
 <div class="summary-cards">
@@ -42,20 +63,31 @@
             <i class="bi bi-wallet2"></i>
         </div>
         <div class="summary-card-label">Receitas Totais</div>
-        <div class="summary-card-value" style="color: var(--green);">R$ {{ "%.2f"|format(total_receitas)|replace(".",",") }}</div>
+        <div class="summary-card-value" style="color: var(--green);"
+             data-animate-count data-value="{{ total_receitas }}" data-currency="true">
+            R$ {{ "%.2f"|format(total_receitas)|replace(".",",") }}
+        </div>
+        <div style="margin-top:6px; font-size:0.75rem; color:var(--text-muted);">
+            {{ num_receitas }} lançamento{{ 's' if num_receitas != 1 else '' }}
+        </div>
     </div>
 
     <!-- Card: Despesas -->
     <div class="summary-card amber" style="border-left: 4px solid var(--amber);">
         <div class="summary-card-icon"><i class="bi bi-cash-stack"></i></div>
         <div class="summary-card-label">Despesas Totais</div>
-        <div class="summary-card-value">R$ {{ "%.2f"|format(total_mes)|replace(".",",") }}</div>
+        <div class="summary-card-value"
+             data-animate-count data-value="{{ total_mes }}" data-currency="true">
+            R$ {{ "%.2f"|format(total_mes)|replace(".",",") }}
+        </div>
         <div style="margin-top:8px;">
             {% if total_ant > 0 %}
                 <span class="badge {% if variacao > 0 %}badge-danger{% else %}badge-success{% endif %}" style="font-size:0.65rem;">
                     <i class="bi bi-graph-{% if variacao > 0 %}up{% else %}down{% endif %}"></i>
                     {{ "%.1f"|format(variacao)|replace("-","") }}% vs mês ant.
                 </span>
+            {% else %}
+                <span style="font-size:0.72rem; color:var(--text-subtle);">{{ num_gastos }} lançamentos</span>
             {% endif %}
         </div>
     </div>
@@ -66,25 +98,50 @@
             <i class="bi bi-piggy-bank-fill"></i>
         </div>
         <div class="summary-card-label">Saldo / Lucro Líquido</div>
-        <div class="summary-card-value" style="color: {% if saldo_real >= 0 %}var(--green){% else %}var(--red){% endif %};">
+        <div class="summary-card-value" style="color: {% if saldo_real >= 0 %}var(--green){% else %}var(--red){% endif %};"
+             data-animate-count data-value="{{ saldo_real|abs }}" data-prefix="{% if saldo_real < 0 %}-R$ {% else %}R$ {% endif %}" data-currency="false">
             R$ {{ "%.2f"|format(saldo_real)|replace(".",",") }}
         </div>
+        {% if saldo_real >= 0 %}
+        <div style="margin-top:6px; font-size:0.72rem; color:var(--green);">✓ No positivo</div>
+        {% else %}
+        <div style="margin-top:6px; font-size:0.72rem; color:var(--red);">⚠ Prejuízo no período</div>
+        {% endif %}
     </div>
 
-    <!-- Card: Status -->
+    <!-- Card: Metas -->
     <div class="summary-card" style="background: rgba(255,255,255,0.02);">
-        <div class="summary-card-icon"><i class="bi bi-info-circle-fill"></i></div>
-        <div class="summary-card-label">Lançamentos</div>
-        <div class="summary-card-value" style="font-size:1.2rem;">{{ num_gastos }} registrados</div>
+        <div class="summary-card-icon"><i class="bi bi-bullseye"></i></div>
+        <div class="summary-card-label">Acesso Rápido</div>
+        <div style="display:flex; flex-direction:column; gap:8px; margin-top:10px;">
+            <a href="{{ url_for('metas.listar', mes=mes, ano=ano) }}" class="btn btn-ghost btn-sm" style="justify-content:center;">
+                <i class="bi bi-bullseye"></i> Ver Metas
+            </a>
+            <a href="{{ url_for('relatorios.index') }}" class="btn btn-outline btn-sm" style="justify-content:center;">
+                <i class="bi bi-file-earmark-bar-graph-fill"></i> Relatórios
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Gráfico de Evolução Mensal -->
+<div class="card" style="margin-bottom:24px;">
+    <div class="card-header">
+        <span class="card-title">
+            <i class="bi bi-graph-up-arrow"></i> Evolução Mensal (6 meses)
+        </span>
+    </div>
+    <div class="card-body" style="min-height:220px; display:flex; align-items:center; justify-content:center;">
+        <canvas id="evolucaoChart" style="max-height:220px;"></canvas>
     </div>
 </div>
 
 <div style="display: flex; gap: 24px; flex-wrap: wrap;">
     <!-- Gastos por categoria (Tabela) -->
-    <div class="card" style="flex: 1; min-width: 400px;">
+    <div class="card" style="flex: 1; min-width: 340px;">
         <div class="card-header">
             <span class="card-title">
-                <i class="bi bi-list-task"></i> Detalhamento por Categoria
+                <i class="bi bi-list-task"></i> Despesas por Categoria
             </span>
             <a href="{{ url_for('gastos.listar', mes=mes, ano=ano) }}" class="btn btn-ghost btn-sm">
                 <i class="bi bi-eye"></i> Ver todas
@@ -117,18 +174,21 @@
             <div class="empty-state">
                 <i class="bi bi-inbox"></i>
                 <p>Nenhuma despesa registrada.</p>
+                <a href="{{ url_for('gastos.novo') }}" class="btn btn-primary btn-sm" style="margin-top:12px;">
+                    <i class="bi bi-plus-circle"></i> Adicionar Despesa
+                </a>
             </div>
         {% endif %}
     </div>
 
-    <!-- Gráfico (Doughnut Chart) -->
-    <div class="card" style="flex: 1; min-width: 400px; display: flex; flex-direction: column;">
+    <!-- Gráfico Doughnut Categorias -->
+    <div class="card" style="flex: 1; min-width: 340px; display: flex; flex-direction: column;">
         <div class="card-header">
             <span class="card-title">
-                <i class="bi bi-pie-chart-fill"></i> Visão Gráfica
+                <i class="bi bi-pie-chart-fill"></i> Distribuição de Despesas
             </span>
         </div>
-        <div class="card-body" style="flex: 1; display: flex; align-items: center; justify-content: center; min-height: 300px;">
+        <div class="card-body" style="flex: 1; display: flex; align-items: center; justify-content: center; min-height: 280px;">
             {% if por_categoria %}
                 <canvas id="categoryChart"></canvas>
             {% else %}
@@ -144,59 +204,115 @@
 {% endblock %}
 
 {% block scripts %}
-{% if por_categoria %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const ctx = document.getElementById('categoryChart').getContext('2d');
-        const data = {
-            labels: {{ por_categoria.keys()|list|tojson }},
-            datasets: [{
-                data: {{ por_categoria.values()|list|tojson }},
-                backgroundColor: [
-                    '#f59e0b', '#6366f1', '#10b981', '#ef4444', 
-                    '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'
-                ],
-                borderWidth: 0,
-                hoverOffset: 15
-            }]
-        };
+document.addEventListener('DOMContentLoaded', function() {
+    const COLORS = ['#f59e0b','#6366f1','#10b981','#ef4444','#8b5cf6','#ec4899','#06b6d4','#f97316','#84cc16','#14b8a6'];
 
-        new Chart(ctx, {
+    // ── Gráfico Doughnut ──
+    {% if por_categoria %}
+    const ctxD = document.getElementById('categoryChart');
+    if (ctxD) {
+        new Chart(ctxD, {
             type: 'doughnut',
-            data: data,
+            data: {
+                labels: {{ por_categoria.keys()|list|tojson }},
+                datasets: [{
+                    data: {{ por_categoria.values()|list|tojson }},
+                    backgroundColor: COLORS,
+                    borderWidth: 0,
+                    hoverOffset: 15
+                }]
+            },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
                     legend: {
                         position: 'bottom',
-                        labels: {
-                            color: '#e2e8f0',
-                            padding: 20,
-                            font: {
-                                family: "'Inter', sans-serif",
-                                size: 12
-                            }
-                        }
+                        labels: { color: '#e2e8f0', padding: 16, font: { family: "'Inter', sans-serif", size: 11 } }
                     },
                     tooltip: {
                         callbacks: {
-                            label: function(context) {
-                                let label = context.label || '';
-                                if (label) { label += ': '; }
-                                if (context.parsed !== null) {
-                                    label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed);
-                                }
-                                return label;
+                            label: ctx => {
+                                let lbl = ctx.label ? ctx.label + ': ' : '';
+                                return lbl + new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(ctx.parsed);
                             }
                         }
                     }
                 },
-                cutout: '70%'
+                cutout: '68%'
             }
         });
-    });
+    }
+    {% endif %}
+
+    // ── Gráfico Linha — Evolução Mensal ──
+    const ctxL = document.getElementById('evolucaoChart');
+    if (ctxL) {
+        fetch('{{ url_for("dashboard.evolucao_json") }}')
+            .then(r => r.json())
+            .then(data => {
+                new Chart(ctxL, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            {
+                                label: 'Receitas',
+                                data: data.receitas,
+                                borderColor: '#10b981',
+                                backgroundColor: 'rgba(16,185,129,0.08)',
+                                tension: 0.4,
+                                fill: true,
+                                pointBackgroundColor: '#10b981',
+                                pointRadius: 4,
+                                pointHoverRadius: 7,
+                            },
+                            {
+                                label: 'Despesas',
+                                data: data.gastos,
+                                borderColor: '#f59e0b',
+                                backgroundColor: 'rgba(245,158,11,0.08)',
+                                tension: 0.4,
+                                fill: true,
+                                pointBackgroundColor: '#f59e0b',
+                                pointRadius: 4,
+                                pointHoverRadius: 7,
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {
+                            legend: {
+                                labels: { color: '#e2e8f0', font: { family: "'Inter', sans-serif", size: 12 } }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: ctx => ctx.dataset.label + ': ' +
+                                        new Intl.NumberFormat('pt-BR', { style:'currency', currency:'BRL' }).format(ctx.parsed.y)
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+                            y: {
+                                ticks: {
+                                    color: '#94a3b8',
+                                    callback: v => 'R$ ' + v.toLocaleString('pt-BR')
+                                },
+                                grid: { color: 'rgba(255,255,255,0.04)' }
+                            }
+                        }
+                    }
+                });
+            })
+            .catch(() => {
+                ctxL.parentElement.innerHTML = '<p style="color:var(--text-subtle); text-align:center;">Dados de evolução indisponíveis.</p>';
+            });
+    }
+});
 </script>
-{% endif %}
 {% endblock %}

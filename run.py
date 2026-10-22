@@ -1,6 +1,7 @@
 from app import create_app, db
 from app.models.categoria import Categoria
 
+
 app = create_app()
 
 def seed_categorias():

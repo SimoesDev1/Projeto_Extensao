@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}Editar Categoria{% endblock %}
+{% block topbar_title %}<i class="bi bi-tag" style="color:var(--amber);margin-right:8px;"></i>Editar Categoria{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Editar Categoria</h1>
+        <p class="page-subtitle">Modifique o nome da categoria selecionada</p>
+    </div>
+    <a href="{{ url_for('categorias.listar') }}" class="btn btn-outline btn-sm">
+        <i class="bi bi-arrow-left"></i> Voltar
+    </a>
+</div>
+
+<div class="form-card">
+    <div class="form-card-header">
+        <i class="bi bi-pencil-fill"></i>
+        <span class="form-card-title">Dados da Categoria</span>
+    </div>
+    <div class="form-card-body">
+        <form method="POST" data-loading>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="form-group">
+                <label class="form-label">Nome da Categoria <span style="color:var(--red);">*</span></label>
+                <input type="text" name="nome_categoria" class="form-control"
+                       value="{{ categoria.nome_categoria }}" required autofocus>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle-fill"></i> Salvar Alterações
+                </button>
+                <a href="{{ url_for('categorias.listar') }}" class="btn btn-outline">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}

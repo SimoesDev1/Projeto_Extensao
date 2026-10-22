@@ -1,0 +1,102 @@
+{
+  "timestamp": 1792687711.227031,
+  "atualizado_em": "22/10/2026 às 13:48",
+  "historico": [
+    {
+      "data": "01/10/2025",
+      "ano": 2025,
+      "mes": 10,
+      "mes_nome": "Outubro",
+      "rotulo": "Out/2025",
+      "valor": 0.09
+    },
+    {
+      "data": "01/11/2025",
+      "ano": 2025,
+      "mes": 11,
+      "mes_nome": "Novembro",
+      "rotulo": "Nov/2025",
+      "valor": 0.18
+    },
+    {
+      "data": "01/12/2025",
+      "ano": 2025,
+      "mes": 12,
+      "mes_nome": "Dezembro",
+      "rotulo": "Dez/2025",
+      "valor": 0.33
+    },
+    {
+      "data": "01/01/2026",
+      "ano": 2026,
+      "mes": 1,
+      "mes_nome": "Janeiro",
+      "rotulo": "Jan/2026",
+      "valor": 0.33
+    },
+    {
+      "data": "01/02/2026",
+      "ano": 2026,
+      "mes": 2,
+      "mes_nome": "Fevereiro",
+      "rotulo": "Fev/2026",
+      "valor": 0.7
+    },
+    {
+      "data": "01/03/2026",
+      "ano": 2026,
+      "mes": 3,
+      "mes_nome": "Março",
+      "rotulo": "Mar/2026",
+      "valor": 0.88
+    },
+    {
+      "data": "01/04/2026",
+      "ano": 2026,
+      "mes": 4,
+      "mes_nome": "Abril",
+      "rotulo": "Abr/2026",
+      "valor": 0.67
+    },
+    {
+      "data": "01/05/2026",
+      "ano": 2026,
+      "mes": 5,
+      "mes_nome": "Maio",
+      "rotulo": "Mai/2026",
+      "valor": 0.58
+    },
+    {
+      "data": "01/06/2026",
+      "ano": 2026,
+      "mes": 6,
+      "mes_nome": "Junho",
+      "rotulo": "Jun/2026",
+      "valor": 0.16
+    },
+    {
+      "data": "01/07/2026",
+      "ano": 2026,
+      "mes": 7,
+      "mes_nome": "Julho",
+      "rotulo": "Jul/2026",
+      "valor": 0.07
+    },
+    {
+      "data": "01/08/2026",
+      "ano": 2026,
+      "mes": 8,
+      "mes_nome": "Agosto",
+      "rotulo": "Ago/2026",
+      "valor": -0.32
+    },
+    {
+      "data": "01/09/2026",
+      "ano": 2026,
+      "mes": 9,
+      "mes_nome": "Setembro",
+      "rotulo": "Set/2026",
+      "valor": 0.82
+    }
+  ]
+}

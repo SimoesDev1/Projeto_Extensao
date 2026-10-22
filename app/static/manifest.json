@@ -1,21 +1,13 @@
 {
-    "name": "Doce como Mel",
-    "short_name": "DocelMel",
-    "start_url": "/",
-    "display": "standalone",
-    "background_color": "#0f0f13",
-    "theme_color": "#f59e0b",
-    "orientation": "portrait-primary",
-    "icons": [
-        {
-            "src": "/static/img/logo.png",
-            "sizes": "192x192",
-            "type": "image/png"
-        },
-        {
-            "src": "/static/img/logo.png",
-            "sizes": "512x512",
-            "type": "image/png"
-        }
-    ]
+  "name": "Doce como Mel",
+  "short_name": "DoceMel",
+  "start_url": "/dashboard/",
+  "display": "standalone",
+  "background_color": "#0f0f13",
+  "theme_color": "#f59e0b",
+  "orientation": "portrait-primary",
+  "icons": [
+    {"src": "/static/img/logo.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "/static/img/logo.png", "sizes": "512x512", "type": "image/png"}
+  ]
 }

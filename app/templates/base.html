@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,251 +14,269 @@
     <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
-        h1, h2, h3, .sidebar-logo-name, .topbar-title { font-family: 'Outfit', sans-serif; }
+        h1,
+        h2,
+        h3,
+        .sidebar-logo-name,
+        .topbar-title {
+            font-family: 'Outfit', sans-serif;
+        }
     </style>
 </head>
+
 <body>
 
-{% if session.get('id_usuario') %}
+    {% if session.get('id_usuario') %}
 
-<!-- SIDEBAR -->
-<aside class="sidebar" data-aos="fade-right" data-aos-duration="800">
-    <a href="{{ url_for('dashboard.index') }}" class="sidebar-logo">
-        <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo" class="sidebar-logo-img">
-        <div class="sidebar-logo-text">
-            <span class="sidebar-logo-name">Doce como Mel</span>
-            <span class="sidebar-logo-sub">Gestão Financeira</span>
+    <!-- SIDEBAR -->
+    <aside class="sidebar" data-aos="fade-right" data-aos-duration="800">
+        <a href="{{ url_for('dashboard.index') }}" class="sidebar-logo">
+            <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo" class="sidebar-logo-img">
+            <div class="sidebar-logo-text">
+                <span class="sidebar-logo-name">Doce como Mel</span>
+                <span class="sidebar-logo-sub">Gestão Financeira</span>
+            </div>
+        </a>
+
+        <nav class="sidebar-nav">
+            <span class="sidebar-section-label">Principal</span>
+            <a href="{{ url_for('dashboard.index') }}"
+                class="sidebar-link {% if request.endpoint == 'dashboard.index' %}active{% endif %}">
+                <i class="bi bi-grid-1x2-fill"></i> Dashboard
+            </a>
+            <a href="{{ url_for('receitas.listar') }}"
+                class="sidebar-link {% if request.endpoint and request.endpoint.startswith('receitas.') %}active{% endif %}">
+                <i class="bi bi-wallet2"></i> Minhas Receitas
+            </a>
+            <a href="{{ url_for('gastos.listar') }}"
+                class="sidebar-link {% if request.endpoint and request.endpoint.startswith('gastos.') %}active{% endif %}">
+                <i class="bi bi-receipt-cutoff"></i> Minhas Despesas
+            </a>
+
+            <span class="sidebar-section-label" style="margin-top:8px;">Lançamentos</span>
+            <a href="{{ url_for('gastos.novo') }}"
+                class="sidebar-link {% if request.endpoint == 'gastos.novo' %}active{% endif %}">
+                <i class="bi bi-plus-square-fill" style="color:var(--amber);"></i> Nova Despesa
+            </a>
+            <a href="{{ url_for('receitas.nova') }}"
+                class="sidebar-link {% if request.endpoint == 'receitas.nova' %}active{% endif %}">
+                <i class="bi bi-plus-square-fill" style="color:var(--green);"></i> Nova Receita
+            </a>
+
+            <span class="sidebar-section-label" style="margin-top:8px;">Ferramentas</span>
+            <a href="{{ url_for('reajuste_ipca.index') }}"
+                class="sidebar-link {% if request.endpoint and request.endpoint.startswith('reajuste_ipca.') %}active{% endif %}">
+                <i class="bi bi-graph-up-arrow" style="color:var(--amber);"></i> Reajuste IPCA <span class="badge"
+                    style="background:rgba(251,191,36,0.18); color:var(--amber); font-size:0.65rem; margin-left:auto; padding:2px 8px;">BACEN</span>
+            </a>
+
+            <a href="{{ url_for('metas.listar') }}"
+                class="sidebar-link {% if request.endpoint and request.endpoint.startswith('metas.') %}active{% endif %}">
+                <i class="bi bi-bullseye"></i> Metas / Orçamento
+            </a>
+            <a href="{{ url_for('relatorios.index') }}"
+                class="sidebar-link {% if request.endpoint and request.endpoint.startswith('relatorios.') %}active{% endif %}">
+                <i class="bi bi-file-earmark-bar-graph-fill"></i> Relatórios
+            </a>
+            <a href="{{ url_for('categorias.listar') }}"
+                class="sidebar-link {% if request.endpoint and request.endpoint.startswith('categorias.') %}active{% endif %}">
+                <i class="bi bi-tags-fill"></i> Categorias
+            </a>
+            <a href="{{ url_for('auth.perfil') }}"
+                class="sidebar-link {% if request.endpoint == 'auth.perfil' %}active{% endif %}">
+                <i class="bi bi-person-fill-gear"></i> Meu Perfil
+            </a>
+        </nav>
+
+        <div class="sidebar-bottom">
+            <a href="{{ url_for('auth.logout') }}" class="sidebar-logout">
+                <i class="bi bi-power"></i> Encerrar Sessão
+            </a>
         </div>
-    </a>
+    </aside>
 
-    <nav class="sidebar-nav">
-        <span class="sidebar-section-label">Principal</span>
-        <a href="{{ url_for('dashboard.index') }}"
-           class="sidebar-link {% if request.endpoint == 'dashboard.index' %}active{% endif %}">
-            <i class="bi bi-grid-1x2-fill"></i> Dashboard
+    <!-- TOPBAR -->
+    <header class="topbar" data-aos="fade-down" data-aos-duration="600">
+        <div class="topbar-left">
+            <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="Abrir menu"
+                aria-expanded="false">
+                <i class="bi bi-list"></i>
+            </button>
+            <span class="topbar-title">
+                {% block topbar_title %}{% endblock %}
+            </span>
+        </div>
+        <a href="{{ url_for('auth.perfil') }}" class="topbar-user" style="text-decoration:none;">
+            <div class="user-avatar">{{ session.get('nome_usuario', 'U')[0].upper() }}</div>
+            <span class="user-name">{{ session.get('nome_usuario') }}</span>
         </a>
-        <a href="{{ url_for('receitas.listar') }}"
-           class="sidebar-link {% if request.endpoint and request.endpoint.startswith('receitas.') %}active{% endif %}">
-            <i class="bi bi-wallet2"></i> Minhas Receitas
-        </a>
-        <a href="{{ url_for('gastos.listar') }}"
-           class="sidebar-link {% if request.endpoint and request.endpoint.startswith('gastos.') %}active{% endif %}">
-            <i class="bi bi-receipt-cutoff"></i> Minhas Despesas
-        </a>
+    </header>
 
-        <span class="sidebar-section-label" style="margin-top:8px;">Lançamentos</span>
-        <a href="{{ url_for('gastos.novo') }}"
-           class="sidebar-link {% if request.endpoint == 'gastos.novo' %}active{% endif %}">
-            <i class="bi bi-plus-square-fill" style="color:var(--amber);"></i> Nova Despesa
-        </a>
-        <a href="{{ url_for('receitas.nova') }}"
-           class="sidebar-link {% if request.endpoint == 'receitas.nova' %}active{% endif %}">
-            <i class="bi bi-plus-square-fill" style="color:var(--green);"></i> Nova Receita
-        </a>
+    <div class="sidebar-overlay" id="sidebar-overlay" hidden></div>
 
-        <span class="sidebar-section-label" style="margin-top:8px;">Ferramentas</span>
-        <a href="{{ url_for('reajuste_ipca.index') }}"
-           class="sidebar-link {% if request.endpoint and request.endpoint.startswith('reajuste_ipca.') %}active{% endif %}">
-            <i class="bi bi-graph-up-arrow" style="color:var(--amber);"></i> Reajuste IPCA <span class="badge" style="background:rgba(251,191,36,0.18); color:var(--amber); font-size:0.65rem; margin-left:auto; padding:2px 8px;">BACEN</span>
-        </a>
-
-        <a href="{{ url_for('metas.listar') }}"
-           class="sidebar-link {% if request.endpoint and request.endpoint.startswith('metas.') %}active{% endif %}">
-            <i class="bi bi-bullseye"></i> Metas / Orçamento
-        </a>
-        <a href="{{ url_for('relatorios.index') }}"
-           class="sidebar-link {% if request.endpoint and request.endpoint.startswith('relatorios.') %}active{% endif %}">
-            <i class="bi bi-file-earmark-bar-graph-fill"></i> Relatórios
-        </a>
-        <a href="{{ url_for('categorias.listar') }}"
-           class="sidebar-link {% if request.endpoint and request.endpoint.startswith('categorias.') %}active{% endif %}">
-            <i class="bi bi-tags-fill"></i> Categorias
-        </a>
-        <a href="{{ url_for('auth.perfil') }}"
-           class="sidebar-link {% if request.endpoint == 'auth.perfil' %}active{% endif %}">
-            <i class="bi bi-person-fill-gear"></i> Meu Perfil
-        </a>
-    </nav>
-
-    <div class="sidebar-bottom">
-        <a href="{{ url_for('auth.logout') }}" class="sidebar-logout">
-            <i class="bi bi-power"></i> Encerrar Sessão
-        </a>
-    </div>
-</aside>
-
-<!-- TOPBAR -->
-<header class="topbar" data-aos="fade-down" data-aos-duration="600">
-    <div class="topbar-left">
-        <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="Abrir menu" aria-expanded="false">
-            <i class="bi bi-list"></i>
-        </button>
-        <span class="topbar-title">
-            {% block topbar_title %}{% endblock %}
-        </span>
-    </div>
-    <a href="{{ url_for('auth.perfil') }}" class="topbar-user" style="text-decoration:none;">
-        <div class="user-avatar">{{ session.get('nome_usuario', 'U')[0].upper() }}</div>
-        <span class="user-name">{{ session.get('nome_usuario') }}</span>
-    </a>
-</header>
-
-<div class="sidebar-overlay" id="sidebar-overlay" hidden></div>
-
-<!-- CONTEÚDO PRINCIPAL -->
-<main class="main" data-aos="fade-up" data-aos-duration="800" data-aos-delay="200">
-    {% with messages = get_flashed_messages(with_categories=true) %}
+    <!-- CONTEÚDO PRINCIPAL -->
+    <main class="main" data-aos="fade-up" data-aos-duration="800" data-aos-delay="200">
+        {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-            {% for category, message in messages %}
-                <div class="alert alert-{{ category }}">
-                    <i class="bi bi-{% if category == 'success' %}check-circle-fill{% elif category == 'warning' %}exclamation-circle-fill{% elif category == 'info' %}info-circle-fill{% else %}exclamation-triangle-fill{% endif %}"></i>
-                    {{ message }}
-                </div>
-            {% endfor %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">
+            <i
+                class="bi bi-{% if category == 'success' %}check-circle-fill{% elif category == 'warning' %}exclamation-circle-fill{% elif category == 'info' %}info-circle-fill{% else %}exclamation-triangle-fill{% endif %}"></i>
+            {{ message }}
+        </div>
+        {% endfor %}
         {% endif %}
-    {% endwith %}
-    {% block content %}{% endblock %}
-</main>
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </main>
 
-{% else %}
+    {% else %}
 
-<!-- ÁREA DE AUTH (sem sidebar) -->
-<div data-aos="zoom-in" data-aos-duration="800">
-    {% block auth_content %}{% endblock %}
-</div>
+    <!-- ÁREA DE AUTH (sem sidebar) -->
+    <div data-aos="zoom-in" data-aos-duration="800">
+        {% block auth_content %}{% endblock %}
+    </div>
 
-{% endif %}
+    {% endif %}
 
-<!-- MODAL DE CONFIRMAÇÃO GLOBAL -->
-<div id="confirm-modal" class="modal-overlay" style="display:none;">
-    <div class="modal-box">
-        <div class="modal-icon"><i class="bi bi-exclamation-triangle-fill"></i></div>
-        <h3 class="modal-title">Confirmar exclusão</h3>
-        <p class="modal-body" id="confirm-modal-msg">Tem certeza que deseja excluir este item?</p>
-        <div class="modal-actions">
-            <button id="confirm-modal-cancel" class="btn btn-outline">Cancelar</button>
-            <button id="confirm-modal-ok" class="btn btn-danger">Excluir</button>
+    <!-- MODAL DE CONFIRMAÇÃO GLOBAL -->
+    <div id="confirm-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-box">
+            <div class="modal-icon"><i class="bi bi-exclamation-triangle-fill"></i></div>
+            <h3 class="modal-title">Confirmar exclusão</h3>
+            <p class="modal-body" id="confirm-modal-msg">Tem certeza que deseja excluir este item?</p>
+            <div class="modal-actions">
+                <button id="confirm-modal-cancel" class="btn btn-outline">Cancelar</button>
+                <button id="confirm-modal-ok" class="btn btn-danger">Excluir</button>
+            </div>
         </div>
     </div>
-</div>
 
-<!-- SPINNER GLOBAL -->
-<div id="page-spinner" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
-    <div style="background:var(--surface-solid); padding:28px 36px; border-radius:var(--radius); border:1px solid var(--border); text-align:center;">
-        <i class="bi bi-arrow-repeat spin" style="font-size:2rem; color:var(--amber);"></i>
-        <p style="margin-top:12px; color:var(--text-muted); font-size:0.85rem;">Processando...</p>
+    <!-- SPINNER GLOBAL -->
+    <div id="page-spinner"
+        style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
+        <div
+            style="background:var(--surface-solid); padding:28px 36px; border-radius:var(--radius); border:1px solid var(--border); text-align:center;">
+            <i class="bi bi-arrow-repeat spin" style="font-size:2rem; color:var(--amber);"></i>
+            <p style="margin-top:12px; color:var(--text-muted); font-size:0.85rem;">Processando...</p>
+        </div>
     </div>
-</div>
 
-<script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
-<script>
-    AOS.init({ once: true, offset: 0 });
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    <script>
+        AOS.init({ once: true, offset: 0 });
 
-    // ── Menu mobile (sidebar) ──
-    (function () {
-        const sidebar = document.querySelector('.sidebar');
-        const toggle = document.getElementById('sidebar-toggle');
-        const overlay = document.getElementById('sidebar-overlay');
-        if (!sidebar || !toggle || !overlay) return;
+        // ── Menu mobile (sidebar) ──
+        (function () {
+            const sidebar = document.querySelector('.sidebar');
+            const toggle = document.getElementById('sidebar-toggle');
+            const overlay = document.getElementById('sidebar-overlay');
+            if (!sidebar || !toggle || !overlay) return;
 
-        function setOpen(open) {
-            document.body.classList.toggle('sidebar-open', open);
-            toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-            toggle.setAttribute('aria-label', open ? 'Fechar menu' : 'Abrir menu');
-            overlay.hidden = !open;
-        }
+            function setOpen(open) {
+                document.body.classList.toggle('sidebar-open', open);
+                toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+                toggle.setAttribute('aria-label', open ? 'Fechar menu' : 'Abrir menu');
+                overlay.hidden = !open;
+            }
 
-        toggle.addEventListener('click', () => setOpen(!document.body.classList.contains('sidebar-open')));
-        overlay.addEventListener('click', () => setOpen(false));
-        sidebar.querySelectorAll('a').forEach(link => {
-            link.addEventListener('click', () => setOpen(false));
+            toggle.addEventListener('click', () => setOpen(!document.body.classList.contains('sidebar-open')));
+            overlay.addEventListener('click', () => setOpen(false));
+            sidebar.querySelectorAll('a').forEach(link => {
+                link.addEventListener('click', () => setOpen(false));
+            });
+            window.addEventListener('keydown', e => {
+                if (e.key === 'Escape') setOpen(false);
+            });
+        })();
+
+        // ── Spinner em submissões de formulário ──
+        document.querySelectorAll('form[data-loading]').forEach(form => {
+            form.addEventListener('submit', () => {
+                document.getElementById('page-spinner').style.display = 'flex';
+            });
         });
-        window.addEventListener('keydown', e => {
-            if (e.key === 'Escape') setOpen(false);
+
+        // ── Modal de confirmação para botões de exclusão ──
+        const modal = document.getElementById('confirm-modal');
+        const modalMsg = document.getElementById('confirm-modal-msg');
+        const modalOk = document.getElementById('confirm-modal-ok');
+        const modalCancel = document.getElementById('confirm-modal-cancel');
+        let pendingForm = null;
+
+        document.querySelectorAll('form[data-confirm]').forEach(form => {
+            form.addEventListener('submit', e => {
+                e.preventDefault();
+                const msg = form.dataset.confirm || 'Tem certeza?';
+                modalMsg.textContent = msg;
+                pendingForm = form;
+                modal.style.display = 'flex';
+            });
         });
-    })();
 
-    // ── Spinner em submissões de formulário ──
-    document.querySelectorAll('form[data-loading]').forEach(form => {
-        form.addEventListener('submit', () => {
-            document.getElementById('page-spinner').style.display = 'flex';
+        modalOk && modalOk.addEventListener('click', () => {
+            modal.style.display = 'none';
+            if (pendingForm) {
+                pendingForm.submit();
+            }
         });
-    });
 
-    // ── Modal de confirmação para botões de exclusão ──
-    const modal = document.getElementById('confirm-modal');
-    const modalMsg = document.getElementById('confirm-modal-msg');
-    const modalOk = document.getElementById('confirm-modal-ok');
-    const modalCancel = document.getElementById('confirm-modal-cancel');
-    let pendingForm = null;
-
-    document.querySelectorAll('form[data-confirm]').forEach(form => {
-        form.addEventListener('submit', e => {
-            e.preventDefault();
-            const msg = form.dataset.confirm || 'Tem certeza?';
-            modalMsg.textContent = msg;
-            pendingForm = form;
-            modal.style.display = 'flex';
-        });
-    });
-
-    modalOk && modalOk.addEventListener('click', () => {
-        modal.style.display = 'none';
-        if (pendingForm) {
-            pendingForm.submit();
-        }
-    });
-
-    modalCancel && modalCancel.addEventListener('click', () => {
-        modal.style.display = 'none';
-        pendingForm = null;
-    });
-
-    // Fecha modal clicando fora
-    modal && modal.addEventListener('click', e => {
-        if (e.target === modal) {
+        modalCancel && modalCancel.addEventListener('click', () => {
             modal.style.display = 'none';
             pendingForm = null;
-        }
-    });
-
-    // ── Animação de contagem nos KPI cards ──
-    function animateCounter(el) {
-        const target = parseFloat(el.dataset.value || 0);
-        const duration = 900;
-        const start = performance.now();
-        const prefix = el.dataset.prefix || '';
-        const suffix = el.dataset.suffix || '';
-        const isCurrency = el.dataset.currency === 'true';
-
-        function update(now) {
-            const elapsed = now - start;
-            const progress = Math.min(elapsed / duration, 1);
-            const eased = 1 - Math.pow(1 - progress, 3);
-            const current = target * eased;
-            if (isCurrency) {
-                el.textContent = prefix + new Intl.NumberFormat('pt-BR', {
-                    style: 'currency', currency: 'BRL'
-                }).format(current) + suffix;
-            } else {
-                el.textContent = prefix + Math.round(current) + suffix;
-            }
-            if (progress < 1) requestAnimationFrame(update);
-        }
-        requestAnimationFrame(update);
-    }
-
-    document.querySelectorAll('[data-animate-count]').forEach(animateCounter);
-
-    // ── Auto-ocultar alerts após 5s ──
-    setTimeout(() => {
-        document.querySelectorAll('.alert').forEach(a => {
-            a.style.transition = 'opacity 0.5s ease';
-            a.style.opacity = '0';
-            setTimeout(() => a.remove(), 500);
         });
-    }, 5000);
-</script>
-{% block scripts %}{% endblock %}
+
+        // Fecha modal clicando fora
+        modal && modal.addEventListener('click', e => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+                pendingForm = null;
+            }
+        });
+
+        // ── Animação de contagem nos KPI cards ──
+        function animateCounter(el) {
+            const target = parseFloat(el.dataset.value || 0);
+            const duration = 900;
+            const start = performance.now();
+            const prefix = el.dataset.prefix || '';
+            const suffix = el.dataset.suffix || '';
+            const isCurrency = el.dataset.currency === 'true';
+
+            function update(now) {
+                const elapsed = now - start;
+                const progress = Math.min(elapsed / duration, 1);
+                const eased = 1 - Math.pow(1 - progress, 3);
+                const current = target * eased;
+                if (isCurrency) {
+                    el.textContent = prefix + new Intl.NumberFormat('pt-BR', {
+                        style: 'currency', currency: 'BRL'
+                    }).format(current) + suffix;
+                } else {
+                    el.textContent = prefix + Math.round(current) + suffix;
+                }
+                if (progress < 1) requestAnimationFrame(update);
+            }
+            requestAnimationFrame(update);
+        }
+
+        document.querySelectorAll('[data-animate-count]').forEach(animateCounter);
+
+        // ── Auto-ocultar alerts após 5s ──
+        setTimeout(() => {
+            document.querySelectorAll('.alert').forEach(a => {
+                a.style.transition = 'opacity 0.5s ease';
+                a.style.opacity = '0';
+                setTimeout(() => a.remove(), 500);
+            });
+        }, 5000);
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
+        }
+    </script>
+    {% block scripts %}{% endblock %}
 </body>
+
 </html>

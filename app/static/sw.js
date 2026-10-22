@@ -1,27 +1,40 @@
 const CACHE_NAME = 'doce-mel-v2';
-const STATIC_ASSETS = ['/static/css/style.css', '/static/img/logo.png'];
 
-self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(STATIC_ASSETS)));
-  self.skipWaiting();
+self.addEventListener('install', event => {
+    event.waitUntil(
+        caches.open(CACHE_NAME)
+            .then(cache => cache.addAll(['/static/css/style.css', '/static/img/logo.png']))
+            .then(() => self.skipWaiting())
+    );
 });
 
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
+self.addEventListener('activate', event => {
+    event.waitUntil(
+        caches.keys()
+            .then(cacheNames => Promise.all(
+                cacheNames.filter(cacheName => cacheName !== CACHE_NAME)
+                    .map(cacheName => caches.delete(cacheName))
+            ))
+            .then(() => clients.claim())
+    );
 });
 
-self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
-  e.respondWith(
-    fetch(e.request).catch(() =>
-      caches.match(e.request).then(r => r || new Response('Sem conexao com o servidor.', {
-        status: 503,
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-      }))
-    )
-  );
+self.addEventListener('fetch', event => {
+    if (event.request.method !== 'GET') {
+        event.respondWith(fetch(event.request));
+        return;
+    }
+
+    if (event.request.url.includes('/static/')) {
+        event.respondWith(
+            caches.match(event.request)
+                .then(response => response || fetch(event.request).then(response => {
+                    caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()));
+                    return response;
+                }))
+        );
+        return;
+    }
+
+    event.respondWith(fetch(event.request));
 });

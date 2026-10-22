@@ -1,178 +1,157 @@
 <style>
-  .chatw-widget {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 1000;
-  }
-  .chatw-button {
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    background-color: var(--surface);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
+  .chatw-btn {
+    position: fixed; bottom: 20px; right: 20px;
+    width: 50px; height: 50px; border-radius: 50%;
+    border: none; background: var(--amber); color: #1a1a1a;
+    font-size: 1.4rem; cursor: pointer; z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
   }
   .chatw-panel {
-    width: 340px;
-    height: 460px;
-    background-color: var(--surface-2);
-    border-radius: var(--radius-md);
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    display: none;
-    flex-direction: column;
-    overflow: hidden;
+    display: none; position: fixed; bottom: 80px; right: 20px;
+    width: 340px; height: 460px; max-width: calc(100vw - 40px);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-md); overflow: hidden;
+    flex-direction: column; z-index: 1000;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   }
+  .chatw-panel.chatw-open { display: flex; }
   .chatw-header {
-    background-color: var(--surface);
-    padding: 10px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; background: var(--surface-2);
+    border-bottom: 1px solid var(--border); color: var(--text); font-weight: 600;
   }
-  .chatw-header h3 {
-    margin: 0;
-    color: var(--text);
-  }
-  .chatw-header button {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--text-muted);
+  .chatw-close {
+    background: none; border: none; color: var(--text-muted);
+    font-size: 1.1rem; cursor: pointer;
   }
   .chatw-messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px;
+    flex: 1; overflow-y: auto; padding: 12px;
+    display: flex; flex-direction: column; gap: 8px;
   }
-  .chatw-message {
-    margin: 5px 0;
+  .chatw-msg {
+    max-width: 80%; padding: 8px 12px; border-radius: var(--radius-md);
+    font-size: 0.9rem; white-space: pre-wrap; word-wrap: break-word;
   }
-  .chatw-message.user {
-    text-align: right;
-    background-color: var(--amber);
-  }
-  .chatw-message.ia {
-    text-align: left;
-    background-color: var(--surface-2);
-  }
-  .chatw-input {
-    display: flex;
+  .chatw-user { align-self: flex-end; background: var(--amber); color: #1a1a1a; }
+  .chatw-ia { align-self: flex-start; background: var(--surface-2); color: var(--text); }
+  .chatw-row {
+    display: flex; gap: 8px; padding: 10px;
     border-top: 1px solid var(--border);
   }
-  .chatw-input input {
-    flex: 1;
-    padding: 10px;
-    border: none;
-    outline: none;
-    background-color: var(--surface-2);
-    color: var(--text);
+  .chatw-input {
+    flex: 1; padding: 8px 10px; background: var(--surface-2);
+    color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius-md); outline: none;
   }
-  .chatw-input button {
-    padding: 10px;
-    border: none;
-    background-color: var(--surface);
-    cursor: pointer;
+  .chatw-send {
+    padding: 8px 14px; border: none; background: var(--amber);
+    color: #1a1a1a; border-radius: var(--radius-md); cursor: pointer; font-weight: 600;
   }
+  .chatw-input:disabled, .chatw-send:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
 
-<div class="chatw-widget">
-  <button class="chatw-button" id="chatw-button">
-    <i class="bi bi-chat-dots-fill"></i>
-  </button>
-  <div class="chatw-panel" id="chatw-panel">
-    <div class="chatw-header">
-      <h3>Assistente Financeiro</h3>
-      <button id="chatw-close">X</button>
-    </div>
-    <div class="chatw-messages" id="chatw-messages"></div>
-    <div class="chatw-input">
-      <input type="text" id="chatw-input" maxlength="500" placeholder="Digite sua pergunta">
-      <button id="chatw-send">Enviar</button>
-    </div>
+<button type="button" class="chatw-btn" id="chatw-btn" aria-label="Abrir chat">
+  <i class="bi bi-chat-dots-fill"></i>
+</button>
+
+<div class="chatw-panel" id="chatw-panel">
+  <div class="chatw-header">
+    <span>Assistente Financeiro</span>
+    <button type="button" class="chatw-close" id="chatw-close" aria-label="Fechar">&times;</button>
+  </div>
+  <div class="chatw-messages" id="chatw-messages"></div>
+  <div class="chatw-row">
+    <input type="text" class="chatw-input" id="chatw-input" maxlength="500" placeholder="Digite sua pergunta">
+    <button type="button" class="chatw-send" id="chatw-send">Enviar</button>
   </div>
 </div>
 
 <script>
-  document.addEventListener('DOMContentLoaded', () => {
-    const button = document.getElementById('chatw-button');
-    const panel = document.getElementById('chatw-panel');
-    const close = document.getElementById('chatw-close');
-    const input = document.getElementById('chatw-input');
-    const send = document.getElementById('chatw-send');
-    const messages = document.getElementById('chatw-messages');
+(function () {
+  var btn = document.getElementById('chatw-btn');
+  var panel = document.getElementById('chatw-panel');
+  var closeBtn = document.getElementById('chatw-close');
+  var msgs = document.getElementById('chatw-messages');
+  var input = document.getElementById('chatw-input');
+  var send = document.getElementById('chatw-send');
+  var statusChecked = false;
+  var unavailable = false;
 
-    button.addEventListener('click', () => {
-      panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
-      if (panel.style.display === 'flex') {
-        fetch('/ia-chat/status')
-          .then(response => response.json())
-          .then(data => {
-            if (!data.disponivel) {
-              messages.innerHTML = '<div class="chatw-message ia">Assistente indisponível</div>';
-              input.disabled = true;
-              send.disabled = true;
-            }
-          })
-          .catch(() => {
-            messages.innerHTML = '<div class="chatw-message ia">Erro ao verificar disponibilidade</div>';
-            input.disabled = true;
-            send.disabled = true;
-          });
-      }
-    });
+  function addMsg(text, cls) {
+    var d = document.createElement('div');
+    d.className = 'chatw-msg ' + cls;
+    d.textContent = text;
+    msgs.appendChild(d);
+    msgs.scrollTop = msgs.scrollHeight;
+    return d;
+  }
 
-    close.addEventListener('click', () => {
-      panel.style.display = 'none';
-    });
+  function setBusy(busy) {
+    input.disabled = busy;
+    send.disabled = busy;
+  }
 
-    send.addEventListener('click', enviarMensagem);
-    input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        enviarMensagem();
-      }
-    });
+  function checkStatus() {
+    fetch('/ia-chat/status')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.disponivel === false) {
+          unavailable = true;
+          addMsg('Assistente indisponivel no momento.', 'chatw-ia');
+          setBusy(true);
+        }
+      })
+      .catch(function () {});
+  }
 
-    function enviarMensagem() {
-      const texto = input.value.trim();
-      if (texto) {
-        const message = document.createElement('div');
-        message.className = 'chatw-message user';
-        message.textContent = texto;
-        messages.appendChild(message);
-        messages.scrollTop = messages.scrollHeight;
-
-        input.value = '';
-        input.disabled = true;
-        send.disabled = true;
-        messages.innerHTML += '<div class="chatw-message ia">Digitando...</div>';
-
-        fetch('/ia-chat/perguntar', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content
-          },
-          body: JSON.stringify({ pergunta: texto })
-        })
-          .then(response => response.json())
-          .then(data => {
-            if (data.resposta) {
-              messages.innerHTML += `<div class="chatw-message ia">${data.resposta}</div>`;
-            } else if (data.erro) {
-              messages.innerHTML += `<div class="chatw-message ia">${data.erro}</div>`;
-            }
-          })
-          .catch(() => {
-            messages.innerHTML += '<div class="chatw-message ia">Erro ao enviar mensagem</div>';
-          })
-          .finally(() => {
-            input.disabled = false;
-            send.disabled = false;
-          });
-      }
+  function togglePanel() {
+    var opened = panel.classList.toggle('chatw-open');
+    if (opened && !statusChecked) {
+      statusChecked = true;
+      checkStatus();
     }
+    if (opened && !unavailable) input.focus();
+  }
+
+  function enviar() {
+    var texto = input.value.trim();
+    if (!texto || unavailable) return;
+    addMsg(texto, 'chatw-user');
+    input.value = '';
+    setBusy(true);
+    var typing = addMsg('Digitando...', 'chatw-ia');
+    var tokenEl = document.querySelector('meta[name=csrf-token]');
+
+    fetch('/ia-chat/perguntar', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': tokenEl ? tokenEl.content : ''
+      },
+      body: JSON.stringify({ pergunta: texto })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        typing.remove();
+        addMsg(d.resposta || d.erro || 'Sem resposta do assistente.', 'chatw-ia');
+      })
+      .catch(function () {
+        typing.remove();
+        addMsg('Falha de conexao com o assistente.', 'chatw-ia');
+      })
+      .finally(function () {
+        if (!unavailable) {
+          setBusy(false);
+          input.focus();
+        }
+      });
+  }
+
+  btn.addEventListener('click', togglePanel);
+  closeBtn.addEventListener('click', function () { panel.classList.remove('chatw-open'); });
+  send.addEventListener('click', enviar);
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); enviar(); }
   });
+})();
 </script>

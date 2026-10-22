@@ -44,11 +44,11 @@ def create_app():
     from app.routes.relatorios import relatorios_bp
     from app.routes.ia_fiscal import ia_fiscal_bp
     from app.routes.reajuste_ipca import reajuste_ipca_bp
-    from app.routes.precificacao import precificacao_bp
+    # from app.routes.precificacao import precificacao_bp
     from app.routes.ia_chat import ia_chat_bp
     from app.routes.comprovantes import comprovantes_bp
     from app.routes.metas_receita import metas_receita_bp
-    from app.routes.usuarios import usuarios_bp
+    # from app.routes.usuarios import usuarios_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(gastos_bp)
@@ -59,11 +59,11 @@ def create_app():
     app.register_blueprint(relatorios_bp)
     app.register_blueprint(ia_fiscal_bp)
     app.register_blueprint(reajuste_ipca_bp)
-    app.register_blueprint(precificacao_bp)
+    # app.register_blueprint(precificacao_bp)
     app.register_blueprint(ia_chat_bp)
     app.register_blueprint(comprovantes_bp)
     app.register_blueprint(metas_receita_bp)
-    app.register_blueprint(usuarios_bp)
+    # app.register_blueprint(usuarios_bp)
 
     with app.app_context():
         import os

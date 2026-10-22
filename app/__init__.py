@@ -1,5 +1,5 @@
 import logging
-from flask import Flask
+from flask import Flask, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
@@ -116,44 +116,13 @@ def create_app():
     # ── PWA: manifest e service worker ──
     @app.route('/manifest.json')
     def pwa_manifest():
-        from flask import jsonify
-        manifest = {
-            "name": "Doce como Mel",
-            "short_name": "DoceMel",
-            "description": "Gestão financeira para pequenos negócios",
-            "start_url": "/dashboard/",
-            "display": "standalone",
-            "background_color": "#0f0f13",
-            "theme_color": "#f59e0b",
-            "orientation": "portrait-primary",
-            "icons": [
-                {"src": "/static/img/logo.png", "sizes": "192x192", "type": "image/png"},
-                {"src": "/static/img/logo.png", "sizes": "512x512", "type": "image/png"}
-            ]
-        }
-        response = jsonify(manifest)
-        response.headers['Content-Type'] = 'application/manifest+json'
-        return response
+        from flask import send_from_directory
+        return send_from_directory(app.static_folder, 'manifest.json')
 
     @app.route('/sw.js')
     def service_worker():
-        from flask import Response
-        sw_code = """
-const CACHE_NAME = 'doce-mel-v1';
-const STATIC_ASSETS = ['/static/css/style.css'];
-
-self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(STATIC_ASSETS)));
-});
-
-self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
-  e.respondWith(
-    fetch(e.request).catch(() => caches.match(e.request))
-  );
-});
-"""
-        return Response(sw_code, mimetype='application/javascript')
+        from flask import send_from_directory
+        return send_from_directory(app.static_folder, 'sw.js')
 
     return app
 

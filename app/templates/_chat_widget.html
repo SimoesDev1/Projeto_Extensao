@@ -1,0 +1,178 @@
+<style>
+  .chatw-widget {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1000;
+  }
+  .chatw-button {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background-color: var(--surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .chatw-panel {
+    width: 340px;
+    height: 460px;
+    background-color: var(--surface-2);
+    border-radius: var(--radius-md);
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .chatw-header {
+    background-color: var(--surface);
+    padding: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .chatw-header h3 {
+    margin: 0;
+    color: var(--text);
+  }
+  .chatw-header button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+  }
+  .chatw-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+  }
+  .chatw-message {
+    margin: 5px 0;
+  }
+  .chatw-message.user {
+    text-align: right;
+    background-color: var(--amber);
+  }
+  .chatw-message.ia {
+    text-align: left;
+    background-color: var(--surface-2);
+  }
+  .chatw-input {
+    display: flex;
+    border-top: 1px solid var(--border);
+  }
+  .chatw-input input {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    outline: none;
+    background-color: var(--surface-2);
+    color: var(--text);
+  }
+  .chatw-input button {
+    padding: 10px;
+    border: none;
+    background-color: var(--surface);
+    cursor: pointer;
+  }
+</style>
+
+<div class="chatw-widget">
+  <button class="chatw-button" id="chatw-button">
+    <i class="bi bi-chat-dots-fill"></i>
+  </button>
+  <div class="chatw-panel" id="chatw-panel">
+    <div class="chatw-header">
+      <h3>Assistente Financeiro</h3>
+      <button id="chatw-close">X</button>
+    </div>
+    <div class="chatw-messages" id="chatw-messages"></div>
+    <div class="chatw-input">
+      <input type="text" id="chatw-input" maxlength="500" placeholder="Digite sua pergunta">
+      <button id="chatw-send">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const button = document.getElementById('chatw-button');
+    const panel = document.getElementById('chatw-panel');
+    const close = document.getElementById('chatw-close');
+    const input = document.getElementById('chatw-input');
+    const send = document.getElementById('chatw-send');
+    const messages = document.getElementById('chatw-messages');
+
+    button.addEventListener('click', () => {
+      panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+      if (panel.style.display === 'flex') {
+        fetch('/ia-chat/status')
+          .then(response => response.json())
+          .then(data => {
+            if (!data.disponivel) {
+              messages.innerHTML = '<div class="chatw-message ia">Assistente indisponível</div>';
+              input.disabled = true;
+              send.disabled = true;
+            }
+          })
+          .catch(() => {
+            messages.innerHTML = '<div class="chatw-message ia">Erro ao verificar disponibilidade</div>';
+            input.disabled = true;
+            send.disabled = true;
+          });
+      }
+    });
+
+    close.addEventListener('click', () => {
+      panel.style.display = 'none';
+    });
+
+    send.addEventListener('click', enviarMensagem);
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        enviarMensagem();
+      }
+    });
+
+    function enviarMensagem() {
+      const texto = input.value.trim();
+      if (texto) {
+        const message = document.createElement('div');
+        message.className = 'chatw-message user';
+        message.textContent = texto;
+        messages.appendChild(message);
+        messages.scrollTop = messages.scrollHeight;
+
+        input.value = '';
+        input.disabled = true;
+        send.disabled = true;
+        messages.innerHTML += '<div class="chatw-message ia">Digitando...</div>';
+
+        fetch('/ia-chat/perguntar', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content
+          },
+          body: JSON.stringify({ pergunta: texto })
+        })
+          .then(response => response.json())
+          .then(data => {
+            if (data.resposta) {
+              messages.innerHTML += `<div class="chatw-message ia">${data.resposta}</div>`;
+            } else if (data.erro) {
+              messages.innerHTML += `<div class="chatw-message ia">${data.erro}</div>`;
+            }
+          })
+          .catch(() => {
+            messages.innerHTML += '<div class="chatw-message ia">Erro ao enviar mensagem</div>';
+          })
+          .finally(() => {
+            input.disabled = false;
+            send.disabled = false;
+          });
+      }
+    }
+  });
+</script>

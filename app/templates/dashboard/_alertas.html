@@ -1,0 +1,10 @@
+{% if alertas %}
+<div class="alertas">
+    {% for alerta in alertas %}
+    <div class="alert alert-warning">
+        <strong>Atenção!</strong> {{ alerta.categoria }} tem gasto acima de 20% da média histórica.
+        Total atual: R$ {{ alerta.total_atual | brl }}, Média histórica: R$ {{ alerta.media_historica | brl }}, Variação: {{ alerta.variacao_pct }}%
+    </div>
+    {% endfor %}
+</div>
+{% endif %}

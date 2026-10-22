@@ -3,6 +3,7 @@ from flask import Blueprint, render_template, request, session, send_file, jsoni
 from app.services.gasto_service import GastoService
 from app.services.receita_service import ReceitaService
 from app.services.pdf_service import PdfService
+from app.services.excel_service import ExcelService
 from app.utils import login_required
 
 relatorios_bp = Blueprint('relatorios', __name__, url_prefix='/relatorios')
@@ -111,3 +112,27 @@ def consolidado():
 
     return send_file(buffer, as_attachment=True, download_name=filename,
                      mimetype='application/pdf')
+
+
+@relatorios_bp.route('/excel')
+@login_required
+def excel():
+    """Gera relatorio em Excel (despesas, receitas e resumo) do periodo."""
+    id_usuario = session['id_usuario']
+    nome_usuario = session.get('nome_usuario', 'Usuario')
+    mes = request.args.get('mes', type=int)
+    ano = request.args.get('ano', type=int)
+
+    if not mes or not ano:
+        hoje = date.today()
+        mes, ano = hoje.month, hoje.year
+
+    gastos = GastoService.filtrar_por_periodo(id_usuario, mes, ano)
+    receitas = ReceitaService.filtrar_por_periodo(id_usuario, mes, ano)
+    periodo_str = f"{mes:02d}/{ano}"
+    filename = f'relatorio_{mes:02d}_{ano}.xlsx'
+
+    buffer = ExcelService.gerar_relatorio(gastos, receitas, periodo_str, nome_usuario)
+
+    return send_file(buffer, as_attachment=True, download_name=filename,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

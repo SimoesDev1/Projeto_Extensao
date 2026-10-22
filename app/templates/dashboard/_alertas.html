@@ -2,8 +2,10 @@
 <div class="alertas">
     {% for alerta in alertas %}
     <div class="alert alert-warning">
-        <strong>Atenção!</strong> {{ alerta.categoria }} tem gasto acima de 20% da média histórica.
-        Total atual: R$ {{ alerta.total_atual | brl }}, Média histórica: R$ {{ alerta.media_historica | brl }}, Variação: {{ alerta.variacao_pct }}%
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <strong>Aten&ccedil;&atilde;o:</strong> {{ alerta.categoria }} est&aacute; {{ alerta.variacao_pct|string|replace('.', ',') }}% acima da m&eacute;dia hist&oacute;rica.
+        Atual: R$ {{ ('{:,.2f}'.format(alerta.total_atual))|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
+        &middot; M&eacute;dia: R$ {{ ('{:,.2f}'.format(alerta.media_historica))|replace(',', 'X')|replace('.', ',')|replace('X', '.') }}
     </div>
     {% endfor %}
 </div>

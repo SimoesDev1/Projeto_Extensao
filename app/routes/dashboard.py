@@ -36,13 +36,7 @@ def index():
     total_ant_gastos = GastoService.calcular_total_periodo_sql(id_usuario, mes_ant, ano_ant)
 
     # Percentual de variação (gastos)
-    variacao_gastos = 0
-    if total_ant_gastos > 0:
-        variacao_gastos = ((float(total_gastos) - float(total_ant_gastos)) / float(total_ant_gastos)) * 100
-
-    # Alertas de anomalia
     alertas = GastoService.detectar_anomalias(id_usuario, mes, ano)
-
     return render_template(
         'dashboard/index.html',
         total_mes=float(total_gastos),

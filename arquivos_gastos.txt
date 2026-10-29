@@ -1,0 +1,1214 @@
+﻿
+===== app\templates\gastos\novo.html =====
+
+{% extends 'base.html' %}
+{% block title %}Nova Despesa{% endblock %}
+{% block topbar_title %}<i class="bi bi-plus-circle" style="color:var(--amber);margin-right:8px;"></i>Nova Despesa{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Nova Despesa</h1>
+        <p class="page-subtitle">Cadastre manualmente ou deixe a IA ler sua nota fiscal</p>
+    </div>
+    <a href="{{ url_for('gastos.listar') }}" class="btn btn-outline btn-sm">
+        <i class="bi bi-arrow-left"></i> Voltar
+    </a>
+</div>
+
+<!-- ABAS DE MODO DE ENTRADA -->
+<div class="entry-tabs" style="display:flex; gap:10px; margin-bottom:20px;">
+    <button id="tab-manual" class="entry-tab-btn active" onclick="switchTab('manual')">
+        <i class="bi bi-pencil-square"></i> Cadastro Manual
+    </button>
+    <button id="tab-ia" class="entry-tab-btn" onclick="switchTab('ia')">
+        <i class="bi bi-stars" style="color:#c084fc;"></i> Ler com IA
+        <span class="tab-badge">NOVO</span>
+    </button>
+</div>
+
+<!-- PAINEL: CADASTRO MANUAL -->
+<div id="painel-manual" class="form-card">
+    <div class="form-card-header">
+        <i class="bi bi-plus-circle-fill"></i>
+        <span class="form-card-title">Dados da Despesa</span>
+    </div>
+    <div class="form-card-body">
+        <form method="POST" enctype="multipart/form-data" data-loading>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group">
+                <label class="form-label">Descricao <span style="color:var(--text-subtle);font-weight:400;">(opcional)</span></label>
+                <input type="text" name="descricao" class="form-control"
+                       placeholder="Ex: Farinha, embalagens, taxa de entrega...">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Categoria <span style="color:var(--red);">*</span></label>
+                <select name="id_categoria" class="form-select" required>
+                    <option value="" disabled selected>Selecione uma categoria</option>
+                    {% for cat in categorias %}
+                    <option value="{{ cat.id_categoria }}">{{ cat.nome_categoria }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label class="form-label">Valor (R$) <span style="color:var(--red);">*</span></label>
+                    <input type="number" step="0.01" min="0.01" name="valor"
+                           class="form-control" placeholder="0,00" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Data <span style="color:var(--red);">*</span></label>
+                    <input type="date" name="data_gasto" class="form-control"
+                           value="{{ hoje }}" required>
+                </div>
+            </div>
+
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label class="form-label">Forma de Pagamento <span style="color:var(--red);">*</span></label>
+                    <select name="forma_pagamento" id="sel-forma-pagamento" class="form-select" required onchange="ajustarFormaPagamento(this.value)">
+                        {% for fp in formas %}
+                        <option value="{{ fp }}">{{ fp }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Anexar Comprovante <span style="color:var(--text-subtle);font-weight:400;">(opcional)</span></label>
+                    <input type="file" name="comprovante" class="form-control" accept="image/*,application/pdf">
+                </div>
+            </div>
+
+            <!-- BLOCO DE PARCELAMENTO -->
+            <div id="bloco-parcelamento" style="margin-bottom: 20px; padding: 14px 16px; background: rgba(168, 85, 247, 0.05); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: var(--radius-sm);">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:600; font-size:0.9rem; color: #e9d5ff; margin-bottom:0;">
+                    <input type="checkbox" name="is_parcelado" id="chk-parcelado" onchange="toggleParcelamento()">
+                    <span><i class="bi bi-credit-card-2-front"></i> Compra Parcelada?</span>
+                </label>
+
+                <div id="campos-parcelamento" style="margin-top: 12px; display: none; grid-template-columns: 160px 1fr; gap: 16px; align-items:center;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label" style="font-size:0.8rem;">Numero de Parcelas</label>
+                        <select name="numero_parcelas" id="sel-numero-parcelas" class="form-select" onchange="atualizarPreviewParcelas()">
+                            {% for n in range(2, 25) %}
+                            <option value="{{ n }}">{{ n }}x parcelas</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div id="resumo-cronograma" style="font-size: 0.83rem; color: var(--text-muted); background: var(--surface-1); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+                        <i class="bi bi-calendar-range" style="color:#c084fc; margin-right:4px;"></i>
+                        <span id="texto-resumo-parcelas">Informe o valor acima para ver as parcelas.</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle-fill"></i> Adicionar Despesa
+                </button>
+                <a href="{{ url_for('gastos.listar') }}" class="btn btn-outline">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- PAINEL: LEITURA COM IA -->
+<div id="painel-ia" class="form-card" style="display:none; max-width:760px;">
+    <div class="form-card-header" style="justify-content:space-between;">
+        <div style="display:flex; align-items:center; gap:12px;">
+            <i class="bi bi-cpu-fill" style="color:#c084fc; font-size:1.3rem;"></i>
+            <span class="form-card-title">Ler Nota Fiscal com Inteligencia Artificial</span>
+        </div>
+        <span style="font-size:0.8rem; color:var(--text-muted);">JPG, PNG, WEBP, PDF - Max. 10 MB</span>
+    </div>
+    <div class="form-card-body">
+        <p style="font-size:0.88rem; color:var(--text-muted); margin-bottom:20px; line-height:1.6;">
+            <i class="bi bi-info-circle" style="color:#c084fc; margin-right:6px;"></i>
+            Envie uma foto ou PDF do comprovante. A IA extrai automaticamente os itens, valores e categorias. Voce revisa tudo antes de salvar.
+        </p>
+
+        <form method="POST" action="{{ url_for('ia_fiscal.processar') }}" enctype="multipart/form-data" data-loading id="form-upload-ia-despesa">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="origem" value="despesa">
+
+            <div id="drop-zone-despesa" class="drop-zone-ia" onclick="document.getElementById('input-file-despesa').click();">
+                <div class="drop-zone-icon">
+                    <i class="bi bi-cloud-arrow-up-fill"></i>
+                </div>
+                <h3 class="drop-zone-title">Arraste sua nota fiscal aqui ou clique para selecionar</h3>
+                <p class="drop-zone-sub">Cupons de mercado, DANFE de NF-e, fotos do celular, comprovantes de PIX</p>
+
+                <input type="file" name="documento" id="input-file-despesa" accept="image/*,application/pdf" style="display:none;" required>
+
+                <button type="button" class="btn btn-outline" style="pointer-events:none;">
+                    <i class="bi bi-folder2-open"></i> Escolher Arquivo
+                </button>
+
+                <div id="file-info-despesa" class="file-info-ia" style="display:none;">
+                    <i class="bi bi-file-earmark-check" style="color:#c084fc;"></i>
+                    <span id="file-name-despesa"></span>
+                </div>
+            </div>
+
+            <div class="form-actions" style="margin-top:24px;">
+                <button type="submit" id="btn-submit-ia-despesa" class="btn-ia-submit">
+                    <i class="bi bi-stars"></i> Interpretar Nota com IA
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.entry-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+}
+.entry-tab-btn:hover {
+    border-color: rgba(192,132,252,0.4);
+    color: var(--text);
+}
+.entry-tab-btn.active {
+    background: rgba(192,132,252,0.1);
+    border-color: rgba(192,132,252,0.5);
+    color: #e9d5ff;
+}
+.tab-badge {
+    background: rgba(192,132,252,0.18);
+    color: #c084fc;
+    font-size: 0.6rem;
+    padding: 2px 7px;
+    border-radius: 99px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+.drop-zone-ia {
+    border: 2px dashed rgba(192,132,252,0.4);
+    border-radius: var(--radius-md);
+    padding: 48px 24px;
+    text-align: center;
+    background: rgba(192,132,252,0.03);
+    cursor: pointer;
+    transition: var(--transition);
+}
+.drop-zone-ia:hover, .drop-zone-ia.dragover {
+    border-color: #c084fc;
+    background: rgba(192,132,252,0.08);
+}
+.drop-zone-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: rgba(192,132,252,0.12);
+    color: #c084fc;
+    font-size: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+}
+.drop-zone-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 6px;
+}
+.drop-zone-sub {
+    font-size: 0.83rem;
+    color: var(--text-muted);
+    margin-bottom: 18px;
+}
+.file-info-ia {
+    margin-top: 16px;
+    padding: 10px 16px;
+    background: var(--surface-2);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text);
+}
+.btn-ia-submit {
+    width: 100%;
+    justify-content: center;
+    height: 46px;
+    font-size: 1rem;
+    background: linear-gradient(135deg, #a855f7, #7c3aed);
+    border: none;
+    color: #fff;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: var(--transition);
+}
+.btn-ia-submit:hover {
+    opacity: 0.88;
+    transform: translateY(-1px);
+}
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function switchTab(tab) {
+        const manualBtn = document.getElementById('tab-manual');
+        const iaBtn = document.getElementById('tab-ia');
+        const manualPanel = document.getElementById('painel-manual');
+        const iaPanel = document.getElementById('painel-ia');
+
+        if (tab === 'manual') {
+            manualBtn.classList.add('active');
+            iaBtn.classList.remove('active');
+            manualPanel.style.display = '';
+            iaPanel.style.display = 'none';
+        } else {
+            iaBtn.classList.add('active');
+            manualBtn.classList.remove('active');
+            iaPanel.style.display = '';
+            manualPanel.style.display = 'none';
+        }
+    }
+
+    (function () {
+        const zone = document.getElementById('drop-zone-despesa');
+        const input = document.getElementById('input-file-despesa');
+        const info = document.getElementById('file-info-despesa');
+        const nameEl = document.getElementById('file-name-despesa');
+
+        if (!zone || !input) return;
+
+        function showFile(file) {
+            nameEl.textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+            info.style.display = 'inline-flex';
+            zone.style.borderColor = '#a855f7';
+            zone.style.background = 'rgba(168,85,247,0.08)';
+        }
+
+        input.addEventListener('change', () => {
+            if (input.files.length > 0) showFile(input.files[0]);
+        });
+
+        zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+        zone.addEventListener('dragleave', () => { zone.classList.remove('dragover'); });
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            zone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                input.files = e.dataTransfer.files;
+                showFile(e.dataTransfer.files[0]);
+            }
+        });
+    })();
+
+    function ajustarFormaPagamento(forma) {
+        const chk = document.getElementById('chk-parcelado');
+        if (forma !== 'Cartao de Credito' && chk && chk.checked) {
+            const selFp = document.getElementById('sel-forma-pagamento');
+            if (selFp) selFp.value = 'Cartao de Credito';
+        }
+    }
+
+    function toggleParcelamento() {
+        const chk = document.getElementById('chk-parcelado');
+        const campos = document.getElementById('campos-parcelamento');
+        const selFp = document.getElementById('sel-forma-pagamento');
+        if (chk && campos) {
+            campos.style.display = chk.checked ? 'grid' : 'none';
+            if (chk.checked && selFp) selFp.value = 'Cart\u00e3o de Cr\u00e9dito';
+            atualizarPreviewParcelas();
+        }
+    }
+
+    function atualizarPreviewParcelas() {
+        const chk = document.getElementById('chk-parcelado');
+        if (!chk || !chk.checked) return;
+        const valInput = document.querySelector('input[name="valor"]');
+        const total = parseFloat(valInput ? valInput.value : 0) || 0;
+        const sel = document.getElementById('sel-numero-parcelas');
+        const numParcelas = parseInt(sel.value) || 1;
+        const txt = document.getElementById('texto-resumo-parcelas');
+        if (txt) {
+            if (total > 0) {
+                const valorParcela = (total / numParcelas).toFixed(2).replace('.', ',');
+                txt.innerHTML = 'Serao gerados <strong>' + numParcelas + ' lancamentos mensais</strong> de aprox. <strong style="color:var(--amber);">R$ ' + valorParcela + '</strong> cada nos proximos ' + numParcelas + ' meses.';
+            } else {
+                txt.innerHTML = 'Informe o valor total da compra para calcular.';
+            }
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const valInput = document.querySelector('input[name="valor"]');
+        if (valInput) valInput.addEventListener('input', atualizarPreviewParcelas);
+    });
+</script>
+{% endblock %}
+
+
+===== app\templates\gastos\editar.html =====
+
+{% extends 'base.html' %}
+{% block title %}Editar Despesa{% endblock %}
+{% block topbar_title %}<i class="bi bi-pencil" style="color:var(--amber);margin-right:8px;"></i>Editar Despesa{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Editar Despesa</h1>
+        <p class="page-subtitle">Atualize os dados do registro selecionado</p>
+    </div>
+    <a href="{{ url_for('gastos.listar') }}" class="btn btn-outline btn-sm">
+        <i class="bi bi-arrow-left"></i> Voltar
+    </a>
+</div>
+
+<div class="form-card">
+    <div class="form-card-header">
+        <i class="bi bi-pencil-fill"></i>
+        <span class="form-card-title">Dados da Despesa</span>
+    </div>
+    <div class="form-card-body">
+        <form method="POST" data-loading>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group">
+                <label class="form-label">Descrição <span style="color:var(--text-subtle);font-weight:400;">(opcional)</span></label>
+                <input type="text" name="descricao" class="form-control"
+                       value="{{ gasto.descricao or '' }}"
+                       placeholder="Ex: Farinha, embalagens, taxa de entrega...">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Categoria <span style="color:var(--red);">*</span></label>
+                <select name="id_categoria" class="form-select" required>
+                    {% for cat in categorias %}
+                    <option value="{{ cat.id_categoria }}"
+                        {% if cat.id_categoria == gasto.id_categoria %}selected{% endif %}>
+                        {{ cat.nome_categoria }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label class="form-label">Valor (R$) <span style="color:var(--red);">*</span></label>
+                    <input type="number" step="0.01" min="0.01" name="valor"
+                           class="form-control" value="{{ gasto.valor }}" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Data <span style="color:var(--red);">*</span></label>
+                    <input type="date" name="data_gasto" class="form-control"
+                           value="{{ gasto.data_gasto }}" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Forma de Pagamento <span style="color:var(--red);">*</span></label>
+                <select name="forma_pagamento" class="form-select" required>
+                    {% for fp in formas %}
+                    <option value="{{ fp }}" {% if gasto.forma_pagamento == fp %}selected{% endif %}>
+                        {{ fp }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle-fill"></i> Salvar Alterações
+                </button>
+                <a href="{{ url_for('gastos.listar') }}" class="btn btn-outline">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+
+===== app\templates\gastos\listar.html =====
+
+{% extends 'base.html' %}
+{% block title %}Despesas{% endblock %}
+{% block topbar_title %}<i class="bi bi-receipt" style="color:var(--amber);margin-right:8px;"></i>Despesas{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Despesas</h1>
+        <p class="page-subtitle">
+            {% if mes and ano %}
+                Exibindo registros de {{ "%02d"|format(mes) }}/{{ ano }}
+            {% else %}
+                Todos os registros cadastrados (Página {{ paginacao.page }} de {{ paginacao.pages or 1 }})
+            {% endif %}
+            {% if busca %} • Busca: "{{ busca }}"{% endif %}
+        </p>
+    </div>
+    <div style="display:flex; gap:10px;">
+        <a href="{{ url_for('ia_fiscal.upload') }}" class="btn btn-outline" style="border-color:#a855f7; color:#c084fc;">
+            <i class="bi bi-stars"></i> Ler Nota com IA
+        </a>
+        <a href="{{ url_for('gastos.novo') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle-fill"></i> Nova Despesa
+        </a>
+    </div>
+</div>
+
+<!-- Card de Projeção de Faturas e Parcelas Futuras -->
+{% if projecoes %}
+<div class="card" style="margin-bottom: 20px; background: linear-gradient(135deg, rgba(168, 85, 247, 0.08) 0%, rgba(30, 41, 59, 0.4) 100%); border: 1px solid rgba(168, 85, 247, 0.25);">
+    <div class="card-body" style="padding: 16px 20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom: 12px;">
+            <div>
+                <h3 style="font-size: 0.95rem; font-weight: 700; color: #e9d5ff; margin:0; display:flex; align-items:center; gap:8px;">
+                    <i class="bi bi-calendar-check" style="color:#c084fc;"></i> Projeção de Faturas Futuras (Parcelas no Cartão)
+                </h3>
+                <span style="font-size: 0.8rem; color: var(--text-muted);">Comprometimento financeiro já registrado para os próximos meses</span>
+            </div>
+            <a href="{{ url_for('gastos.listar', parcelados=1) }}" class="btn btn-outline btn-sm" style="font-size:0.78rem; padding:4px 10px; border-color:rgba(168,85,247,0.4); color:#c084fc;">
+                <i class="bi bi-filter"></i> Ver Apenas Parceladas
+            </a>
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px;">
+            {% for p in projecoes %}
+            {% set nomes_m = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
+            <div style="background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px;">
+                <div style="font-size:0.75rem; color:var(--text-subtle); text-transform:uppercase; font-weight:600;">
+                    {{ nomes_m[p.mes] }}/{{ p.ano }}
+                </div>
+                <div style="font-size: 1.15rem; font-weight: 800; color: {% if p.total_parcelas > 0 %}var(--red){% else %}var(--text-muted){% endif %}; margin-top: 4px;">
+                    R$ {{ "%.2f"|format(p.total_parcelas)|replace('.',',') }}
+                </div>
+                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">
+                    {{ p.qtd_parcelas }} parcela(s) a vencer
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Card principal -->
+<div class="card">
+
+    <!-- Barra de Filtros e Busca -->
+    <div class="filter-bar">
+        <form method="GET" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; flex:1;">
+            <!-- Busca textual -->
+            <div class="form-group" style="flex: 1; min-width: 180px;">
+                <label class="form-label">Buscar</label>
+                <div style="position:relative;">
+                    <input type="text" name="busca" class="form-control"
+                           placeholder="Buscar por descrição..." value="{{ busca }}">
+                </div>
+            </div>
+
+            <!-- Categoria -->
+            <div class="form-group" style="min-width: 140px;">
+                <label class="form-label">Categoria</label>
+                <select name="id_categoria" class="form-select">
+                    <option value="">Todas</option>
+                    {% for cat in categorias %}
+                    <option value="{{ cat.id_categoria }}" {% if id_categoria == cat.id_categoria %}selected{% endif %}>
+                        {{ cat.nome_categoria }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Mês -->
+            <div class="form-group" style="width: 120px;">
+                <label class="form-label">Mês</label>
+                <select name="mes" class="form-select">
+                    <option value="">Todos</option>
+                    {% set meses_nomes = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
+                    {% for m in range(1, 13) %}
+                    <option value="{{ m }}" {% if mes == m %}selected{% endif %}>
+                        {{ meses_nomes[m-1] }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Ano -->
+            <div class="form-group" style="width: 90px;">
+                <label class="form-label">Ano</label>
+                <input type="number" name="ano" class="form-control"
+                       placeholder="Ano" value="{{ ano or '' }}" min="2020" max="2099">
+            </div>
+
+            <!-- Apenas parceladas -->
+            <div class="form-group" style="display:flex; align-items:center; padding-bottom: 8px;">
+                <label style="display:flex; align-items:center; gap:6px; font-size:0.83rem; cursor:pointer; color:var(--text-muted); margin-bottom:0; white-space:nowrap;">
+                    <input type="checkbox" name="parcelados" value="1" {% if parcelados %}checked{% endif %} onchange="this.form.submit()">
+                    <span><i class="bi bi-credit-card-2-front" style="color:#c084fc;"></i> Parceladas</span>
+                </label>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-sm" style="height: 38px;">
+                <i class="bi bi-funnel-fill"></i> Filtrar
+            </button>
+            {% if mes or ano or busca or id_categoria or parcelados %}
+            <a href="{{ url_for('gastos.listar') }}" class="btn btn-outline btn-sm" style="height: 38px;" title="Limpar filtros">
+                <i class="bi bi-x-circle"></i> Limpar
+            </a>
+            {% endif %}
+        </form>
+
+        <!-- Botões de Exportação -->
+        <div style="display:flex; gap:8px;">
+            {% if mes and ano %}
+            <a href="{{ url_for('gastos.exportar', mes=mes, ano=ano) }}"
+               class="btn btn-export btn-sm" title="Baixar relatório PDF">
+                <i class="bi bi-file-earmark-pdf-fill"></i> PDF
+            </a>
+            <a href="{{ url_for('gastos.exportar_csv', mes=mes, ano=ano) }}"
+               class="btn btn-outline btn-sm" title="Baixar dados em CSV">
+                <i class="bi bi-file-earmark-spreadsheet-fill"></i> CSV
+            </a>
+            {% else %}
+            <a href="{{ url_for('gastos.exportar') }}"
+               class="btn btn-export btn-sm" title="Baixar todos os dados em PDF">
+                <i class="bi bi-file-earmark-pdf-fill"></i> PDF
+            </a>
+            <a href="{{ url_for('gastos.exportar_csv') }}"
+               class="btn btn-outline btn-sm" title="Baixar todos os dados em CSV">
+                <i class="bi bi-file-earmark-spreadsheet-fill"></i> CSV
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Tabela de Despesas -->
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Descrição</th>
+                <th>Categoria</th>
+                <th>Pagamento</th>
+                <th>Valor</th>
+                <th style="text-align:right;">Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for gasto in gastos %}
+            <tr>
+                <td style="white-space:nowrap; color:var(--text-muted); font-size:0.82rem;">
+                    {{ gasto.data_gasto.strftime('%d/%m/%Y') }}
+                </td>
+                <td>
+                    <a href="{{ url_for('gastos.detalhes', id=gasto.id_gasto) }}" style="color:var(--text-primary); text-decoration:none; font-weight:500;">
+                        {{ gasto.descricao or '—' }}
+                    </a>
+                    {% if gasto.total_parcelas and gasto.total_parcelas > 1 %}
+                    <span class="badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.35); font-size: 0.72rem; padding: 2px 7px; margin-left: 6px;" title="Compra Parcelada">
+                        <i class="bi bi-credit-card-2-front"></i> {{ gasto.parcela_atual }}/{{ gasto.total_parcelas }}
+                    </span>
+                    {% endif %}
+                    {% if gasto.comprovante %}
+                    <a href="{{ url_for('gastos.detalhes', id=gasto.id_gasto) }}" class="badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); font-size: 0.72rem; padding: 2px 7px; margin-left: 4px; text-decoration:none;" title="Possui comprovante / nota fiscal anexada">
+                        <i class="bi bi-paperclip"></i> Anexo
+                    </a>
+                    {% endif %}
+                </td>
+                <td><span class="badge badge-default">{{ gasto.categoria.nome_categoria }}</span></td>
+                <td style="color:var(--text-muted); font-size:0.85rem;">{{ gasto.forma_pagamento }}</td>
+                <td class="valor-negativo" style="white-space:nowrap;">
+                    R$ {{ "%.2f"|format(gasto.valor)|replace(".",",") }}
+                </td>
+                <td>
+                    <div style="display:flex; gap:6px; justify-content:flex-end;">
+                        <a href="{{ url_for('gastos.detalhes', id=gasto.id_gasto) }}"
+                           class="btn btn-ghost btn-sm btn-icon" title="Ver Detalhes" style="color:#60a5fa;">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        <a href="{{ url_for('gastos.editar', id=gasto.id_gasto) }}"
+                           class="btn btn-ghost btn-sm btn-icon" title="Editar">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                        <form method="POST" action="{{ url_for('gastos.excluir', id=gasto.id_gasto) }}"
+                              data-confirm="Tem certeza que deseja excluir esta parcela (R$ {{ '%.2f'|format(gasto.valor)|replace('.',',') }})?">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-danger btn-sm btn-icon" title="Excluir esta parcela">
+                                <i class="bi bi-trash3"></i>
+                            </button>
+                        </form>
+                        {% if gasto.total_parcelas and gasto.total_parcelas > 1 and gasto.id_parcelamento %}
+                        <form method="POST" action="{{ url_for('gastos.excluir', id=gasto.id_gasto) }}"
+                              data-confirm="ATENÇÃO: Deseja excluir TODAS as {{ gasto.total_parcelas }} parcelas desta compra?">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="excluir_todas" value="1">
+                            <button type="submit" class="btn btn-ghost btn-sm btn-icon" title="Excluir todas as {{ gasto.total_parcelas }} parcelas desta compra" style="color:var(--red);">
+                                <i class="bi bi-calendar-x"></i>
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6">
+                    <div class="empty-state">
+                        <i class="bi bi-inbox"></i>
+                        <p>Nenhuma despesa encontrada para os critérios informados.</p>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+
+        <!-- Linha de total na página -->
+        {% if gastos %}
+        <tfoot>
+            <tr class="table-total">
+                <td colspan="4" style="color:var(--text-muted); font-size:0.85rem;">
+                    Total listado nesta página ({{ gastos|length }} itens)
+                </td>
+                <td class="valor-negativo" style="white-space:nowrap;">
+                    R$ {{ "%.2f"|format(total)|replace(".",",") }}
+                </td>
+                <td></td>
+            </tr>
+        </tfoot>
+        {% endif %}
+    </table>
+
+    <!-- Paginação -->
+    {% if paginacao and paginacao.pages > 1 %}
+    <div class="pagination-container">
+        <div class="pagination-info">
+            Página {{ paginacao.page }} de {{ paginacao.pages }} (Total: {{ paginacao.total }} registros)
+        </div>
+        <div class="pagination-controls">
+            <!-- Anterior -->
+            {% if paginacao.has_prev %}
+            <a href="{{ url_for('gastos.listar', page=paginacao.prev_num, mes=mes, ano=ano, busca=busca, id_categoria=id_categoria) }}"
+               class="page-btn" title="Página anterior">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+            {% else %}
+            <span class="page-btn disabled"><i class="bi bi-chevron-left"></i></span>
+            {% endif %}
+
+            <!-- Números de Página -->
+            {% for p in paginacao.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                {% if p %}
+                    {% if p == paginacao.page %}
+                        <span class="page-btn active">{{ p }}</span>
+                    {% else %}
+                        <a href="{{ url_for('gastos.listar', page=p, mes=mes, ano=ano, busca=busca, id_categoria=id_categoria) }}"
+                           class="page-btn">{{ p }}</a>
+                    {% endif %}
+                {% else %}
+                    <span class="page-btn disabled">…</span>
+                {% endif %}
+            {% endfor %}
+
+            <!-- Próximo -->
+            {% if paginacao.has_next %}
+            <a href="{{ url_for('gastos.listar', page=paginacao.next_num, mes=mes, ano=ano, busca=busca, id_categoria=id_categoria) }}"
+               class="page-btn" title="Próxima página">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+            {% else %}
+            <span class="page-btn disabled"><i class="bi bi-chevron-right"></i></span>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+{% endblock %}
+
+
+===== app\templates\gastos\detalhes.html =====
+
+{% extends 'base.html' %}
+{% block title %}Detalhes da Despesa #{{ gasto.id_gasto }}{% endblock %}
+{% block topbar_title %}<i class="bi bi-receipt" style="color:var(--amber);margin-right:8px;"></i>Detalhes da Despesa{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <h1 class="page-title">Despesa #{{ gasto.id_gasto }}</h1>
+            {% if gasto.total_parcelas and gasto.total_parcelas > 1 %}
+            <span class="badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.35); font-size: 0.8rem; padding: 4px 10px;">
+                <i class="bi bi-credit-card-2-front"></i> Parcela {{ gasto.parcela_atual }}/{{ gasto.total_parcelas }}
+            </span>
+            {% endif %}
+            {% if gasto.comprovante %}
+            <span class="badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); font-size: 0.8rem; padding: 4px 10px;">
+                <i class="bi bi-paperclip"></i> Comprovante Anexado
+            </span>
+            {% endif %}
+        </div>
+        <p class="page-subtitle">Lançamento registrado em {{ gasto.data_gasto.strftime('%d/%m/%Y') }}</p>
+    </div>
+    <div style="display:flex; gap:10px;">
+        <a href="{{ url_for('gastos.listar') }}" class="btn btn-outline btn-sm">
+            <i class="bi bi-arrow-left"></i> Voltar
+        </a>
+        <a href="{{ url_for('gastos.editar', id=gasto.id_gasto) }}" class="btn btn-outline btn-sm">
+            <i class="bi bi-pencil"></i> Editar
+        </a>
+        <form method="POST" action="{{ url_for('gastos.excluir', id=gasto.id_gasto) }}"
+              data-confirm="Tem certeza que deseja excluir esta despesa (R$ {{ '%.2f'|format(gasto.valor)|replace('.',',') }})?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-danger btn-sm">
+                <i class="bi bi-trash3"></i> Excluir
+            </button>
+        </form>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
+
+    <!-- COLUNA DA ESQUERDA: DADOS DA DESPESA E PARCELAMENTO -->
+    <div style="display:flex; flex-direction:column; gap:20px;">
+
+        <!-- CARD PRINCIPAL DE DADOS -->
+        <div class="card">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h3 class="card-title">Informações Financeiras</h3>
+                <span class="badge badge-default">{{ gasto.categoria.nome_categoria }}</span>
+            </div>
+            <div class="card-body">
+                <div style="margin-bottom: 20px;">
+                    <span style="font-size: 0.82rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Valor da Despesa</span>
+                    <div style="font-size: 2.2rem; font-weight: 800; color: var(--red); margin-top: 4px;">
+                        R$ {{ "%.2f"|format(gasto.valor)|replace('.',',') }}
+                    </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom: 16px;">
+                    <div>
+                        <span style="font-size:0.8rem; color:var(--text-subtle); display:block;">Data do Pagamento</span>
+                        <strong style="color:var(--text-primary); font-size:0.95rem;">
+                            <i class="bi bi-calendar3" style="color:var(--amber); margin-right:4px;"></i>
+                            {{ gasto.data_gasto.strftime('%d/%m/%Y') }}
+                        </strong>
+                    </div>
+                    <div>
+                        <span style="font-size:0.8rem; color:var(--text-subtle); display:block;">Forma de Pagamento</span>
+                        <strong style="color:var(--text-primary); font-size:0.95rem;">
+                            <i class="bi bi-wallet2" style="color:#c084fc; margin-right:4px;"></i>
+                            {{ gasto.forma_pagamento }}
+                        </strong>
+                    </div>
+                </div>
+
+                <div style="border-top: 1px solid var(--border); padding-top: 14px;">
+                    <span style="font-size:0.8rem; color:var(--text-subtle); display:block;">Descrição</span>
+                    <p style="color:var(--text-primary); font-size:0.95rem; margin-top:4px; line-height: 1.5;">
+                        {{ gasto.descricao or 'Nenhuma observação ou descrição informada.' }}
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- SE HOUVER PARCELAMENTO: CRONOGRAMA DAS DEMAIS PARCELAS -->
+        {% if gasto.total_parcelas and gasto.total_parcelas > 1 %}
+        <div class="card">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <h3 class="card-title">Cronograma do Parcelamento</h3>
+                    <span class="card-subtitle">Compra em {{ gasto.total_parcelas }}x parcelas</span>
+                </div>
+                <span class="badge" style="background:#a855f7; color:#fff;">
+                    Parcela {{ gasto.parcela_atual }} de {{ gasto.total_parcelas }}
+                </span>
+            </div>
+            <div class="card-body" style="padding: 0;">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Parcela</th>
+                            <th>Vencimento</th>
+                            <th>Valor</th>
+                            <th style="text-align:right;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in parcelas_relacionadas %}
+                        <tr style="{% if p.id_gasto == gasto.id_gasto %}background: rgba(168, 85, 247, 0.12); font-weight:600;{% endif %}">
+                            <td>
+                                <i class="bi bi-credit-card" style="color:#c084fc; margin-right:4px;"></i>
+                                {{ p.parcela_atual }}/{{ p.total_parcelas }}
+                                {% if p.id_gasto == gasto.id_gasto %}
+                                <span class="badge badge-default" style="font-size:0.68rem; margin-left:4px;">Atual</span>
+                                {% endif %}
+                            </td>
+                            <td style="color:var(--text-muted); font-size:0.85rem;">
+                                {{ p.data_gasto.strftime('%d/%m/%Y') }}
+                            </td>
+                            <td class="valor-negativo">
+                                R$ {{ "%.2f"|format(p.valor)|replace('.',',') }}
+                            </td>
+                            <td style="text-align:right;">
+                                {% if p.id_gasto != gasto.id_gasto %}
+                                <a href="{{ url_for('gastos.detalhes', id=p.id_gasto) }}" class="btn btn-ghost btn-sm" style="font-size:0.75rem; padding: 2px 8px;">
+                                    Ver <i class="bi bi-chevron-right"></i>
+                                </a>
+                                {% else %}
+                                <span style="font-size:0.78rem; color:#c084fc;">Exibindo</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+
+    <!-- COLUNA DA DIREITA: COMPROVANTE DIGITALIZADO DA IA -->
+    <div class="card" style="position: sticky; top: 90px;">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <h3 class="card-title">Comprovante / Nota Fiscal</h3>
+                <span class="card-subtitle">Arquivo capturado via IA ou anexo</span>
+            </div>
+            {% if gasto.comprovante %}
+            <a href="{{ url_for('servir_comprovante', filename=gasto.comprovante) }}" target="_blank"
+               class="btn btn-outline btn-sm" title="Abrir em tela cheia">
+                <i class="bi bi-arrows-fullscreen"></i> Expandir
+            </a>
+            {% endif %}
+        </div>
+        <div class="card-body" style="padding: 16px; text-align:center;">
+            {% if gasto.comprovante %}
+                {% if is_pdf %}
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 32px 16px; margin-bottom: 12px;">
+                        <i class="bi bi-file-earmark-pdf-fill" style="font-size: 3.5rem; color: var(--red);"></i>
+                        <p style="font-size: 0.95rem; color: var(--text-primary); margin-top: 10px; font-weight:600;">Documento Fiscal em PDF</p>
+                        <p style="font-size: 0.8rem; color: var(--text-muted);">{{ gasto.comprovante }}</p>
+                        <div style="display:flex; justify-content:center; gap:10px; margin-top: 16px;">
+                            <a href="{{ url_for('servir_comprovante', filename=gasto.comprovante) }}" target="_blank" class="btn btn-primary btn-sm">
+                                <i class="bi bi-box-arrow-up-right"></i> Abrir PDF
+                            </a>
+                            <a href="{{ url_for('servir_comprovante', filename=gasto.comprovante) }}" download class="btn btn-outline btn-sm">
+                                <i class="bi bi-download"></i> Baixar
+                            </a>
+                        </div>
+                    </div>
+                {% else %}
+                    <div style="max-height: 540px; overflow-y: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); background: #000; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);">
+                        <a href="{{ url_for('servir_comprovante', filename=gasto.comprovante) }}" target="_blank" title="Clique para ampliar">
+                            <img src="{{ url_for('servir_comprovante', filename=gasto.comprovante) }}"
+                                 alt="Comprovante de Despesa"
+                                 style="width: 100%; height: auto; display: block; object-fit: contain; cursor: zoom-in;">
+                        </a>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 12px; font-size:0.8rem; color:var(--text-muted);">
+                        <span><i class="bi bi-info-circle"></i> Clique na imagem para zoom</span>
+                        <a href="{{ url_for('servir_comprovante', filename=gasto.comprovante) }}" download class="btn btn-ghost btn-sm">
+                            <i class="bi bi-download"></i> Baixar Imagem
+                        </a>
+                    </div>
+                {% endif %}
+            {% else %}
+                <div class="empty-state" style="padding: 48px 16px;">
+                    <i class="bi bi-file-earmark-x" style="font-size: 3rem; color: var(--text-subtle);"></i>
+                    <p style="font-weight:600; margin-top:10px; color:var(--text-muted);">Nenhum comprovante anexado</p>
+                    <span style="font-size: 0.8rem; color: var(--text-subtle); max-width: 280px; display:inline-block; margin-top:4px;">
+                        Lançamentos feitos através da ferramenta <strong>Ler Nota com IA</strong> armazenam automaticamente a foto da nota fiscal aqui.
+                    </span>
+                    <div style="margin-top: 16px;">
+                        <a href="{{ url_for('ia_fiscal.upload') }}" class="btn btn-outline btn-sm" style="border-color:#a855f7; color:#c084fc;">
+                            <i class="bi bi-stars"></i> Usar Leitor de IA
+                        </a>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}
+
+
+===== app\routes\gastos.py =====
+
+import csv
+import logging
+from io import StringIO
+from datetime import datetime, date
+
+from flask import (Blueprint, render_template, redirect, url_for,
+                   request, flash, session, Response, send_file)
+
+from app.services.gasto_service import GastoService
+from app.services.categoria_service import CategoriaService
+from app.services.pdf_service import PdfService
+from app.utils import login_required
+
+logger = logging.getLogger(__name__)
+gastos_bp = Blueprint('gastos', __name__, url_prefix='/gastos')
+
+FORMAS_PAGAMENTO = ['Dinheiro', 'Pix', 'Cartão de Débito', 'Cartão de Crédito']
+PER_PAGE = 20
+
+
+@gastos_bp.route('/')
+@login_required
+def listar():
+    id_usuario = session['id_usuario']
+    mes = request.args.get('mes', type=int)
+    ano = request.args.get('ano', type=int)
+    busca = request.args.get('busca', '').strip() or None
+    id_categoria = request.args.get('id_categoria', type=int) or None
+    parcelados = request.args.get('parcelados', type=int) == 1
+    page = request.args.get('page', type=int, default=1)
+
+    categorias = CategoriaService.listar_todas()
+
+    paginacao = GastoService.listar_paginado(
+        id_usuario=id_usuario, page=page, per_page=PER_PAGE,
+        mes=mes, ano=ano, busca=busca, id_categoria=id_categoria,
+        apenas_parcelados=parcelados
+    )
+
+    gastos = paginacao.items
+    total = GastoService.calcular_total(gastos)
+    projecoes = GastoService.buscar_projecao_parcelas_futuras(id_usuario, 4)
+
+    return render_template(
+        'gastos/listar.html',
+        gastos=gastos, paginacao=paginacao,
+        mes=mes, ano=ano, busca=busca or '',
+        id_categoria=id_categoria, categorias=categorias,
+        parcelados=parcelados, projecoes=projecoes,
+        total=float(total)
+    )
+
+
+@gastos_bp.route('/novo', methods=['GET', 'POST'])
+@login_required
+def novo():
+    categorias = CategoriaService.listar_todas()
+
+    if request.method == 'POST':
+        try:
+            dados = {
+                'valor': float(request.form.get('valor', 0)),
+                'data_gasto': datetime.strptime(request.form.get('data_gasto'), '%Y-%m-%d').date(),
+                'forma_pagamento': request.form.get('forma_pagamento'),
+                'descricao': request.form.get('descricao') or None,
+                'id_usuario': session['id_usuario'],
+                'id_categoria': int(request.form.get('id_categoria', 0))
+            }
+            if dados['valor'] <= 0:
+                flash('O valor da despesa deve ser maior que zero.', 'danger')
+                return render_template('gastos/novo.html', categorias=categorias, hoje=date.today(),
+                                       formas=FORMAS_PAGAMENTO)
+            if dados['id_categoria'] <= 0:
+                flash('Selecione uma categoria válida.', 'danger')
+                return render_template('gastos/novo.html', categorias=categorias, hoje=date.today(),
+                                       formas=FORMAS_PAGAMENTO)
+
+            is_parcelado = request.form.get('is_parcelado') in ['on', '1', 'true', 'True']
+            try:
+                numero_parcelas = int(request.form.get('numero_parcelas', 1))
+            except (ValueError, TypeError):
+                numero_parcelas = 1
+
+            if not is_parcelado or numero_parcelas < 1:
+                numero_parcelas = 1
+
+            # Upload opcional de comprovante
+            if 'comprovante' in request.files:
+                file = request.files['comprovante']
+                if file and file.filename != '':
+                    from app.services.comprovante_service import salvar_e_otimizar_comprovante
+                    comprovante_salvo = salvar_e_otimizar_comprovante(file)
+                    if comprovante_salvo:
+                        dados['comprovante'] = comprovante_salvo
+
+        except (ValueError, TypeError):
+            flash('Dados inválidos. Verifique o formulário.', 'danger')
+            return render_template('gastos/novo.html', categorias=categorias, hoje=date.today(),
+                                   formas=FORMAS_PAGAMENTO)
+
+        if numero_parcelas > 1:
+            GastoService.criar_gasto_parcelado(dados, numero_parcelas)
+            logger.info(f"Compra parcelada criada por usuário {session['id_usuario']}: {numero_parcelas}x de R${dados['valor']/numero_parcelas:.2f}")
+            flash(f'Compra parcelada em {numero_parcelas}x com sucesso! {numero_parcelas} lançamentos gerados nos respectivos meses.', 'success')
+        else:
+            GastoService.criar_gasto(dados)
+            logger.info(f"Gasto criado por usuário {session['id_usuario']}: R${dados['valor']}")
+            flash('Despesa cadastrada com sucesso!', 'success')
+
+        return redirect(url_for('gastos.listar'))
+
+    return render_template('gastos/novo.html', categorias=categorias, hoje=date.today(),
+                           formas=FORMAS_PAGAMENTO)
+
+
+@gastos_bp.route('/editar/<int:id>', methods=['GET', 'POST'])
+@login_required
+def editar(id):
+    gasto = GastoService.buscar_por_id(id)
+    if not gasto or gasto.id_usuario != session['id_usuario']:
+        flash('Despesa não encontrada.', 'danger')
+        return redirect(url_for('gastos.listar'))
+
+    categorias = CategoriaService.listar_todas()
+
+    if request.method == 'POST':
+        try:
+            dados = {
+                'valor': float(request.form.get('valor', 0)),
+                'data_gasto': datetime.strptime(request.form.get('data_gasto'), '%Y-%m-%d').date(),
+                'forma_pagamento': request.form.get('forma_pagamento'),
+                'descricao': request.form.get('descricao') or None,
+                'id_categoria': int(request.form.get('id_categoria', 0))
+            }
+            if dados['valor'] <= 0:
+                flash('O valor da despesa deve ser maior que zero.', 'danger')
+                return render_template('gastos/editar.html', gasto=gasto, categorias=categorias,
+                                       formas=FORMAS_PAGAMENTO)
+            if dados['id_categoria'] <= 0:
+                flash('Selecione uma categoria válida.', 'danger')
+                return render_template('gastos/editar.html', gasto=gasto, categorias=categorias,
+                                       formas=FORMAS_PAGAMENTO)
+        except (ValueError, TypeError):
+            flash('Dados inválidos. Verifique o formulário.', 'danger')
+            return render_template('gastos/editar.html', gasto=gasto, categorias=categorias,
+                                   formas=FORMAS_PAGAMENTO)
+
+        GastoService.atualizar_gasto(id, dados)
+        flash('Despesa atualizada com sucesso!', 'success')
+        return redirect(url_for('gastos.listar'))
+
+    return render_template('gastos/editar.html', gasto=gasto, categorias=categorias,
+                           formas=FORMAS_PAGAMENTO)
+
+
+@gastos_bp.route('/excluir/<int:id>', methods=['POST'])
+@login_required
+def excluir(id):
+    gasto = GastoService.buscar_por_id(id)
+    if gasto and gasto.id_usuario == session['id_usuario']:
+        excluir_todas = request.form.get('excluir_todas') == '1'
+        qtd = GastoService.excluir_gasto(id, excluir_todas_parcelas=excluir_todas)
+        if excluir_todas and qtd > 1:
+            flash(f'Todas as {qtd} parcelas desta compra foram excluídas!', 'success')
+        else:
+            flash('Despesa excluída com sucesso!', 'success')
+    else:
+        flash('Despesa não encontrada.', 'danger')
+    return redirect(url_for('gastos.listar'))
+
+
+
+@gastos_bp.route('/detalhes/<int:id>')
+@login_required
+def detalhes(id):
+    """Exibe a visualização detalhada de uma despesa, incluindo comprovante da IA e parcelas."""
+    gasto = GastoService.buscar_por_id(id)
+    if not gasto or gasto.id_usuario != session['id_usuario']:
+        flash('Despesa não encontrada.', 'danger')
+        return redirect(url_for('gastos.listar'))
+
+    parcelas_relacionadas = []
+    if gasto.id_parcelamento:
+        from app.models.gasto import Gasto
+        parcelas_relacionadas = (Gasto.query
+                                .filter_by(id_parcelamento=gasto.id_parcelamento, id_usuario=gasto.id_usuario)
+                                .order_by(Gasto.parcela_atual.asc())
+                                .all())
+
+    is_pdf = bool(gasto.comprovante and gasto.comprovante.lower().endswith('.pdf'))
+
+    return render_template(
+        'gastos/detalhes.html',
+        gasto=gasto,
+        parcelas_relacionadas=parcelas_relacionadas,
+        is_pdf=is_pdf
+    )
+
+
+@gastos_bp.route('/exportar')
+@login_required
+def exportar():
+    """Exporta os gastos do período filtrado como PDF via PdfService centralizado."""
+    mes = request.args.get('mes', type=int)
+    ano = request.args.get('ano', type=int)
+    id_usuario = session['id_usuario']
+    nome_usuario = session.get('nome_usuario', 'Usuário')
+
+    if not mes or not ano:
+        gastos = GastoService.listar_por_usuario(id_usuario)
+        periodo_str = "Todos os Registros"
+        filename = f'relatorio_gastos_completo_{date.today()}.pdf'
+    else:
+        gastos = GastoService.filtrar_por_periodo(id_usuario, mes, ano)
+        periodo_str = f"{mes:02d}/{ano}"
+        filename = f'relatorio_gastos_{mes:02d}_{ano}.pdf'
+
+    buffer = PdfService.gerar_relatorio_gastos(gastos, periodo_str, nome_usuario)
+
+    return send_file(buffer, as_attachment=True, download_name=filename,
+                     mimetype='application/pdf')
+
+
+@gastos_bp.route('/exportar-csv')
+@login_required
+def exportar_csv():
+    """Exporta os gastos do período filtrado como CSV."""
+    mes = request.args.get('mes', type=int)
+    ano = request.args.get('ano', type=int)
+    id_usuario = session['id_usuario']
+
+    if not mes or not ano:
+        gastos = GastoService.listar_por_usuario(id_usuario)
+        filename = f'todas_despesas_{date.today()}.csv'
+    else:
+        gastos = GastoService.filtrar_por_periodo(id_usuario, mes, ano)
+        filename = f'despesas_{mes:02d}_{ano}.csv'
+
+    si = StringIO()
+    cw = csv.writer(si)
+    cw.writerow(['Data', 'Descricao', 'Categoria', 'Forma de Pagamento', 'Valor'])
+
+    for g in gastos:
+        cw.writerow([
+            g.data_gasto.strftime('%d/%m/%Y'),
+            g.descricao or '',
+            g.categoria.nome_categoria,
+            g.forma_pagamento,
+            f'{float(g.valor):.2f}'
+        ])
+
+    output = Response(si.getvalue().encode('utf-8-sig'), mimetype='text/csv')
+    output.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    return output
+

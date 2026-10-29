@@ -70,7 +70,14 @@ class AiFiscalService:
     # Disponibilidade
     # ------------------------------------------------------------------
     @classmethod
+    def get_provider(cls) -> str:
+        return os.getenv("AI_PROVIDER", "texto").strip().lower()
+
+    @classmethod
     def is_configurado(cls) -> bool:
+        provider = cls.get_provider()
+        if provider == "texto":
+            return True
         try:
             response = requests.get(f"{cls.OLLAMA_HOST}/api/tags", timeout=5)
             response.raise_for_status()
@@ -103,7 +110,148 @@ class AiFiscalService:
         categorias_existentes: list[str],
     ) -> dict[str, Any]:
         hoje_str = date.today().strftime("%Y-%m-%d")
+        provider = cls.get_provider()
 
+        if provider == "texto":
+            return cls._processar_com_extrator_texto(file_bytes, mimetype, hoje_str, categorias_existentes)
+        elif provider == "ollama":
+            return cls._processar_com_ollama(file_bytes, mimetype, hoje_str, categorias_existentes)
+        else:
+            logger.warning("Provedor '%s' desconhecido. Utilizando 'texto' como padrão.", provider)
+            return cls._processar_com_extrator_texto(file_bytes, mimetype, hoje_str, categorias_existentes)
+
+    @classmethod
+    def _processar_com_extrator_texto(
+        cls,
+        file_bytes: bytes,
+        mimetype: str,
+        hoje_str: str,
+        categorias_existentes: list[str],
+    ) -> dict[str, Any]:
+        """
+        Processa documentos PDF diretamente via extrator_nota.py sem IA/GPU.
+        Se falhar ou não conseguir identificar valores, retorna estrutura vazia para preenchimento manual.
+        """
+        try:
+            import extrator_nota
+
+            if mimetype.endswith("pdf"):
+                # PDF: extração direta via pdfplumber
+                dados_extrator = extrator_nota.extrair_dados_pdf(file_bytes)
+            elif mimetype.startswith("image/"):
+                # Imagem: OCR via RapidOCR (CPU-only, sem GPU)
+                logger.info("Arquivo de imagem recebido (%s). Usando OCR para extração.", mimetype)
+                dados_extrator = extrator_nota.extrair_dados_imagem_ocr(file_bytes)
+            else:
+                logger.info("Tipo de arquivo não suportado para extração automática: %s", mimetype)
+                return cls._gerar_resultado_manual(
+                    f"Formato '{mimetype}' não suportado pelo extrator. Preencha os campos manualmente.",
+                    hoje_str,
+                )
+
+            # Converte o retorno do extrator_nota para o formato esperado pela tela de revisão
+            dados_convertidos = cls._converter_extrator_para_revisao(dados_extrator, hoje_str, categorias_existentes)
+
+            if dados_convertidos["valor_total"] == 0.0 and not dados_convertidos["itens"]:
+                return cls._gerar_resultado_manual(
+                    "Não foi possível identificar os dados automaticamente no documento. Por favor, preencha manualmente.",
+                    hoje_str,
+                )
+
+            dados_convertidos["ia_sucesso"] = True
+            dados_convertidos["modo_demo"] = False
+            return dados_convertidos
+
+        except Exception as e:
+            # Loga com traceback completo, sem engolir exceções
+            logger.exception("Falha na extração de dados do documento via extrator_nota: %s", e)
+            return cls._gerar_resultado_manual(
+                f"Erro na extração automática ({e}). Por favor, preencha os dados manualmente.",
+                hoje_str,
+            )
+
+
+    @classmethod
+    def _converter_extrator_para_revisao(
+        cls,
+        d: dict[str, Any],
+        hoje_str: str,
+        categorias_existentes: list[str]
+    ) -> dict[str, Any]:
+        """
+        Converte o dicionário {fornecedor, data, forma_pagamento, parcelas, valor_total, itens}
+        para a estrutura que a tela de revisão e o banco utilizam.
+        """
+        fornecedor = str(d.get("fornecedor") or "").strip()
+        data_str = str(d.get("data") or "").strip()
+        if not data_str:
+            data_str = hoje_str
+
+        fp = str(d.get("forma_pagamento") or "Pix").strip()
+        if fp not in cls.FORMAS_PAGAMENTO:
+            if "CRÉDITO" in fp.upper() or "CREDITO" in fp.upper():
+                fp = "Cartão de Crédito"
+            elif "DÉBITO" in fp.upper() or "DEBITO" in fp.upper():
+                fp = "Cartão de Débito"
+            elif "PIX" in fp.upper():
+                fp = "Pix"
+            elif "DINHEIRO" in fp.upper():
+                fp = "Dinheiro"
+            else:
+                fp = "Pix"
+
+        parcelas = int(d.get("parcelas") or 1)
+        is_parcelado = parcelas > 1
+        valor_total = round(float(d.get("valor_total") or 0.0), 2)
+        valor_parcela = round(valor_total / parcelas, 2) if is_parcelado and parcelas > 0 else 0.0
+
+        itens_in = d.get("itens") or []
+        itens_out = []
+        cat_padrao = categorias_existentes[0] if categorias_existentes else "Outros"
+
+        for item in itens_in:
+            if isinstance(item, dict):
+                desc = str(item.get("descricao") or "").strip()
+                val = round(float(item.get("valor") or 0.0), 2)
+                cat = str(item.get("categoria_sugerida") or "").strip()
+                if not cat:
+                    cat = cat_padrao
+                if desc or val > 0:
+                    itens_out.append({
+                        "descricao": desc or fornecedor or "Item",
+                        "valor": val,
+                        "categoria_sugerida": cat
+                    })
+
+        if not itens_out and valor_total > 0:
+            itens_out.append({
+                "descricao": fornecedor or "Despesa de Comprovante",
+                "valor": valor_total,
+                "categoria_sugerida": cat_padrao
+            })
+
+        return {
+            "tipo_transacao": "despesa",
+            "data": cls._normalizar_data(data_str, hoje_str),
+            "estabelecimento": fornecedor,
+            "forma_pagamento": fp,
+            "tipo_receita": "Outros",
+            "valor_total": valor_total,
+            "is_parcelado": is_parcelado,
+            "numero_parcelas": parcelas,
+            "valor_parcela": valor_parcela,
+            "itens": itens_out,
+            "observacoes": f"Extraído via Extrator de Texto (sem IA). Fornecedor: {fornecedor}" if fornecedor else "Extraído via Extrator de Texto (sem IA).",
+        }
+
+    @classmethod
+    def _processar_com_ollama(
+        cls,
+        file_bytes: bytes,
+        mimetype: str,
+        hoje_str: str,
+        categorias_existentes: list[str],
+    ) -> dict[str, Any]:
         categorias_str = (
             ", ".join(categorias_existentes)
             if categorias_existentes
@@ -193,15 +341,14 @@ Não invente dados que não estejam no documento."""
             if not texto:
                 raise ValueError("O Ollama retornou uma resposta vazia.")
 
-            # Útil para diagnosticar leituras erradas.
             logger.info("Resposta bruta do modelo: %s", texto[:1500])
 
             dados = cls._normalizar_resultado(cls._extrair_json(texto), hoje_str)
 
             if dados["valor_total"] == 0.0 and not dados["itens"]:
-                return cls._gerar_resultado_erro(
+                return cls._gerar_resultado_manual(
                     "O modelo não conseguiu identificar valores no documento. "
-                    "Verifique se a imagem está nítida e tente novamente.",
+                    "Por favor, confira os campos e preencha manualmente.",
                     hoje_str,
                 )
 
@@ -210,26 +357,32 @@ Não invente dados que não estejam no documento."""
             return dados
 
         except requests.exceptions.ConnectionError:
-            msg = "Não foi possível conectar ao Ollama. Verifique se ele está em execução."
-            logger.error(msg)
-            return cls._gerar_resultado_erro(msg, hoje_str)
+            logger.exception("Não foi possível conectar ao Ollama.")
+            return cls._gerar_resultado_manual(
+                "O serviço Ollama não está em execução. Os campos estão liberados para preenchimento manual.",
+                hoje_str,
+            )
 
         except requests.exceptions.Timeout:
-            msg = (
-                "O processamento excedeu o tempo limite. "
-                "Tente novamente ou aumente OLLAMA_TIMEOUT."
+            logger.exception("O processamento excedeu o tempo limite no Ollama.")
+            return cls._gerar_resultado_manual(
+                "Tempo limite de processamento excedido. Por favor, preencha os dados manualmente.",
+                hoje_str,
             )
-            logger.error(msg)
-            return cls._gerar_resultado_erro(msg, hoje_str)
 
         except requests.RequestException as e:
-            msg = f"Erro de comunicação com o Ollama: {e}"
-            logger.error(msg)
-            return cls._gerar_resultado_erro(msg, hoje_str)
+            logger.exception("Erro de comunicação com o Ollama: %s", e)
+            return cls._gerar_resultado_manual(
+                f"Erro de comunicação com o Ollama ({e}). Preencha os dados manualmente.",
+                hoje_str,
+            )
 
         except Exception as e:
             logger.exception("Erro ao processar documento com IA: %s", e)
-            return cls._gerar_resultado_erro(str(e), hoje_str)
+            return cls._gerar_resultado_manual(
+                f"Não foi possível extrair dados automaticamente ({e}). Preencha os campos manualmente.",
+                hoje_str,
+            )
 
     # ------------------------------------------------------------------
     # Preparação das imagens
@@ -495,6 +648,11 @@ Não invente dados que não estejam no documento."""
     # ------------------------------------------------------------------
     # Erro
     # ------------------------------------------------------------------
+
+    @classmethod
+    def _gerar_resultado_manual(cls, mensagem: str, hoje_str: str) -> dict[str, Any]:
+        return cls._gerar_resultado_erro(mensagem, hoje_str)
+
     @staticmethod
     def _gerar_resultado_erro(mensagem: str, hoje_str: str) -> dict[str, Any]:
         """Estrutura segura em caso de falha. Nunca gera valores fictícios."""

@@ -67,7 +67,12 @@ def create_app():
 
     with app.app_context():
         import os
-        os.makedirs(app.config.get('UPLOAD_COMPROVANTES_DIR'), exist_ok=True)
+        # Cria a pasta de comprovantes de forma robusta, sem caminhos absolutos fixos.
+        _upload_dir = app.config.get('UPLOAD_COMPROVANTES_DIR') or os.path.join(
+            app.config.get('BASE_DIR', os.path.dirname(os.path.dirname(__file__))),
+            'uploads', 'comprovantes'
+        )
+        os.makedirs(_upload_dir, exist_ok=True)
         db.create_all()
 
         # ── Migrações suaves de colunas novas ──────────────────────────────────
@@ -123,6 +128,12 @@ def create_app():
     def service_worker():
         from flask import send_from_directory
         return send_from_directory(app.static_folder, 'sw.js')
+
+    @app.route('/favicon.ico')
+    def favicon():
+        import os
+        from flask import send_from_directory
+        return send_from_directory(os.path.join(app.static_folder, 'img'), 'favicon.ico')
 
     return app
 

@@ -1,20 +1,20 @@
 {% extends 'base.html' %}
-{% block title %}Nova Receita{% endblock %}
-{% block topbar_title %}<i class="bi bi-plus-circle" style="color:var(--green);margin-right:8px;"></i>Registrar Ganho{% endblock %}
+{% block title %}Nova Despesa{% endblock %}
+{% block topbar_title %}<i class="bi bi-plus-circle" style="color:var(--amber);margin-right:8px;"></i>Nova Despesa{% endblock %}
 {% block content %}
 
 <div class="page-header">
     <div>
-        <h1 class="page-title">Nova Receita</h1>
-        <p class="page-subtitle">Cadastre manualmente ou deixe a IA ler seu comprovante</p>
+        <h1 class="page-title">Nova Despesa</h1>
+        <p class="page-subtitle">Cadastre manualmente ou deixe a IA ler sua nota fiscal</p>
     </div>
-    <a href="{{ url_for('receitas.listar') }}" class="btn btn-outline btn-sm">
+    <a href="{{ url_for('gastos.listar') }}" class="btn btn-outline btn-sm">
         <i class="bi bi-arrow-left"></i> Voltar
     </a>
 </div>
 
 <!-- ABAS DE MODO DE ENTRADA -->
-<div style="display:flex; gap:10px; margin-bottom:20px;">
+<div class="entry-tabs" style="display:flex; gap:10px; margin-bottom:20px;">
     <button id="tab-manual" class="entry-tab-btn active" onclick="switchTab('manual')">
         <i class="bi bi-pencil-square"></i> Cadastro Manual
     </button>
@@ -27,36 +27,26 @@
 <!-- PAINEL: CADASTRO MANUAL -->
 <div id="painel-manual" class="form-card">
     <div class="form-card-header">
-        <i class="bi bi-wallet2" style="color:var(--green);"></i>
-        <span class="form-card-title">Dados do Recebimento</span>
+        <i class="bi bi-plus-circle-fill"></i>
+        <span class="form-card-title">Dados da Despesa</span>
     </div>
     <div class="form-card-body">
         <form method="POST" enctype="multipart/form-data" data-loading>
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
             <div class="form-group">
-                <label class="form-label">Descricao / Origem</label>
+                <label class="form-label">Descricao <span style="color:var(--text-subtle);font-weight:400;">(opcional)</span></label>
                 <input type="text" name="descricao" class="form-control"
-                       placeholder="Ex: Venda de Bolo de Pote, Encomenda Festa..." autofocus>
+                       placeholder="Ex: Farinha, embalagens, taxa de entrega...">
             </div>
 
-            <div class="form-grid-2">
-                <div class="form-group">
-                    <label class="form-label">Tipo de Receita <span style="color:var(--red);">*</span></label>
-                    <select name="tipo_receita" class="form-select" required>
-                        {% for t in tipos %}
-                        <option value="{{ t }}">{{ t }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Forma de Recebimento <span style="color:var(--red);">*</span></label>
-                    <select name="forma_recebimento" class="form-select" required>
-                        {% for f in formas %}
-                        <option value="{{ f }}">{{ f }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
+            <div class="form-group">
+                <label class="form-label">Categoria <span style="color:var(--red);">*</span></label>
+                <select name="id_categoria" class="form-select" required>
+                    <option value="" disabled selected>Selecione uma categoria</option>
+                    {% for cat in categorias %}
+                    <option value="{{ cat.id_categoria }}">{{ cat.nome_categoria }}</option>
+                    {% endfor %}
+                </select>
             </div>
 
             <div class="form-grid-2">
@@ -67,20 +57,66 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label">Data <span style="color:var(--red);">*</span></label>
-                    <input type="date" name="data_receita" class="form-control"
+                    <input type="date" name="data_gasto" class="form-control"
                            value="{{ hoje }}" required>
                 </div>
             </div>
 
-            <div class="form-group">
-                <label class="form-label">Anexar Comprovante / Recibo <span style="color:var(--text-subtle);font-weight:400;">(opcional - Imagem ou PDF)</span></label>
-                <input type="file" name="comprovante" class="form-control" accept="image/*,application/pdf">
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label class="form-label">Forma de Pagamento <span style="color:var(--red);">*</span></label>
+                    <select name="forma_pagamento" id="sel-forma-pagamento" class="form-select" required onchange="ajustarFormaPagamento(this.value)">
+                        {% for fp in formas %}
+                        <option value="{{ fp }}">{{ fp }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Anexar Comprovante <span style="color:var(--text-subtle);font-weight:400;">(opcional)</span></label>
+                    <input type="file" name="comprovante" class="form-control" accept="image/*,application/pdf">
+                </div>
+            </div>
+
+            <!-- STATUS DE PAGAMENTO -->
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:600; font-size:0.9rem; color: var(--text-primary); margin-bottom:0;">
+                    <input type="checkbox" name="is_pago" id="chk-pago" checked>
+                    <span><i class="bi bi-check2-circle" style="color: var(--green, #22c55e);"></i> Pago</span>
+                </label>
+                <small style="display:block; margin-top:4px; color: var(--text-subtle); font-size:0.78rem;">
+                    Desmarque para registrar como pendente (conta a pagar). Em compras parceladas, apenas a 1ª parcela recebe este status.
+                </small>
+            </div>
+
+            <!-- BLOCO DE PARCELAMENTO -->
+            <div id="bloco-parcelamento" style="margin-bottom: 20px; padding: 14px 16px; background: rgba(168, 85, 247, 0.05); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: var(--radius-sm);">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:600; font-size:0.9rem; color: #e9d5ff; margin-bottom:0;">
+                    <input type="checkbox" name="is_parcelado" id="chk-parcelado" onchange="toggleParcelamento()">
+                    <span><i class="bi bi-credit-card-2-front"></i> Compra Parcelada?</span>
+                </label>
+
+                <div id="campos-parcelamento" style="margin-top: 12px; display: none; grid-template-columns: 160px 1fr; gap: 16px; align-items:center;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label" style="font-size:0.8rem;">Numero de Parcelas</label>
+                        <select name="numero_parcelas" id="sel-numero-parcelas" class="form-select" onchange="atualizarPreviewParcelas()">
+                            {% for n in range(2, 25) %}
+                            <option value="{{ n }}">{{ n }}x parcelas</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div id="resumo-cronograma" style="font-size: 0.83rem; color: var(--text-muted); background: var(--surface-1); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+                        <i class="bi bi-calendar-range" style="color:#c084fc; margin-right:4px;"></i>
+                        <span id="texto-resumo-parcelas">Informe o valor acima para ver as parcelas.</span>
+                    </div>
+                </div>
             </div>
 
             <div class="form-actions">
-                <button type="submit" class="btn btn-success" style="width:100%; justify-content:center;">
-                    <i class="bi bi-check-circle-fill"></i> Salvar Receita
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle-fill"></i> Adicionar Despesa
                 </button>
+                <a href="{{ url_for('gastos.listar') }}" class="btn btn-outline">Cancelar</a>
             </div>
         </form>
     </div>
@@ -91,42 +127,42 @@
     <div class="form-card-header" style="justify-content:space-between;">
         <div style="display:flex; align-items:center; gap:12px;">
             <i class="bi bi-cpu-fill" style="color:#c084fc; font-size:1.3rem;"></i>
-            <span class="form-card-title">Ler Comprovante com Inteligencia Artificial</span>
+            <span class="form-card-title">Ler Nota Fiscal com Inteligencia Artificial</span>
         </div>
         <span style="font-size:0.8rem; color:var(--text-muted);">JPG, PNG, WEBP, PDF - Max. 10 MB</span>
     </div>
     <div class="form-card-body">
         <p style="font-size:0.88rem; color:var(--text-muted); margin-bottom:20px; line-height:1.6;">
             <i class="bi bi-info-circle" style="color:#c084fc; margin-right:6px;"></i>
-            Envie um comprovante de PIX, recibo ou nota fiscal de venda. A IA extrai o valor e os dados automaticamente. Voce revisa antes de salvar.
+            Envie uma foto ou PDF do comprovante. A IA extrai automaticamente os itens, valores e categorias. Voce revisa tudo antes de salvar.
         </p>
 
-        <form method="POST" action="{{ url_for('ia_fiscal.processar') }}" enctype="multipart/form-data" data-loading id="form-upload-ia-receita">
+        <form method="POST" action="{{ url_for('ia_fiscal.processar') }}" enctype="multipart/form-data" data-loading id="form-upload-ia-despesa">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="origem" value="receita">
+            <input type="hidden" name="origem" value="despesa">
 
-            <div id="drop-zone-receita" class="drop-zone-ia" onclick="document.getElementById('input-file-receita').click();">
-                <div class="drop-zone-icon" style="background:rgba(16,185,129,0.12); color:var(--green);">
+            <div id="drop-zone-despesa" class="drop-zone-ia" onclick="document.getElementById('input-file-despesa').click();">
+                <div class="drop-zone-icon">
                     <i class="bi bi-cloud-arrow-up-fill"></i>
                 </div>
-                <h3 class="drop-zone-title">Arraste seu comprovante aqui ou clique para selecionar</h3>
-                <p class="drop-zone-sub">Comprovantes de PIX, recibos de venda, notas fiscais de entrada</p>
+                <h3 class="drop-zone-title">Arraste sua nota fiscal aqui ou clique para selecionar</h3>
+                <p class="drop-zone-sub">Cupons de mercado, DANFE de NF-e, fotos do celular, comprovantes de PIX</p>
 
-                <input type="file" name="documento" id="input-file-receita" accept="image/*,application/pdf" style="display:none;" required>
+                <input type="file" name="documento" id="input-file-despesa" accept="image/*,application/pdf" style="display:none;" required>
 
                 <button type="button" class="btn btn-outline" style="pointer-events:none;">
                     <i class="bi bi-folder2-open"></i> Escolher Arquivo
                 </button>
 
-                <div id="file-info-receita" class="file-info-ia" style="display:none;">
-                    <i class="bi bi-file-earmark-check" style="color:var(--green);"></i>
-                    <span id="file-name-receita"></span>
+                <div id="file-info-despesa" class="file-info-ia" style="display:none;">
+                    <i class="bi bi-file-earmark-check" style="color:#c084fc;"></i>
+                    <span id="file-name-despesa"></span>
                 </div>
             </div>
 
             <div class="form-actions" style="margin-top:24px;">
-                <button type="submit" id="btn-submit-ia-receita" class="btn-ia-submit btn-ia-submit-green">
-                    <i class="bi bi-stars"></i> Interpretar Comprovante com IA
+                <button type="submit" id="btn-submit-ia-despesa" class="btn-ia-submit">
+                    <i class="bi bi-stars"></i> Interpretar Nota com IA
                 </button>
             </div>
         </form>
@@ -261,18 +297,18 @@
     }
 
     (function () {
-        const zone = document.getElementById('drop-zone-receita');
-        const input = document.getElementById('input-file-receita');
-        const info = document.getElementById('file-info-receita');
-        const nameEl = document.getElementById('file-name-receita');
+        const zone = document.getElementById('drop-zone-despesa');
+        const input = document.getElementById('input-file-despesa');
+        const info = document.getElementById('file-info-despesa');
+        const nameEl = document.getElementById('file-name-despesa');
 
         if (!zone || !input) return;
 
         function showFile(file) {
             nameEl.textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
             info.style.display = 'inline-flex';
-            zone.style.borderColor = 'var(--green)';
-            zone.style.background = 'rgba(16,185,129,0.06)';
+            zone.style.borderColor = '#a855f7';
+            zone.style.background = 'rgba(168,85,247,0.08)';
         }
 
         input.addEventListener('change', () => {
@@ -290,5 +326,47 @@
             }
         });
     })();
+
+    function ajustarFormaPagamento(forma) {
+        const chk = document.getElementById('chk-parcelado');
+        if (forma !== 'Cartao de Credito' && chk && chk.checked) {
+            const selFp = document.getElementById('sel-forma-pagamento');
+            if (selFp) selFp.value = 'Cartao de Credito';
+        }
+    }
+
+    function toggleParcelamento() {
+        const chk = document.getElementById('chk-parcelado');
+        const campos = document.getElementById('campos-parcelamento');
+        const selFp = document.getElementById('sel-forma-pagamento');
+        if (chk && campos) {
+            campos.style.display = chk.checked ? 'grid' : 'none';
+            if (chk.checked && selFp) selFp.value = 'Cart\u00e3o de Cr\u00e9dito';
+            atualizarPreviewParcelas();
+        }
+    }
+
+    function atualizarPreviewParcelas() {
+        const chk = document.getElementById('chk-parcelado');
+        if (!chk || !chk.checked) return;
+        const valInput = document.querySelector('input[name="valor"]');
+        const total = parseFloat(valInput ? valInput.value : 0) || 0;
+        const sel = document.getElementById('sel-numero-parcelas');
+        const numParcelas = parseInt(sel.value) || 1;
+        const txt = document.getElementById('texto-resumo-parcelas');
+        if (txt) {
+            if (total > 0) {
+                const valorParcela = (total / numParcelas).toFixed(2).replace('.', ',');
+                txt.innerHTML = 'Serao gerados <strong>' + numParcelas + ' lancamentos mensais</strong> de aprox. <strong style="color:var(--amber);">R$ ' + valorParcela + '</strong> cada nos proximos ' + numParcelas + ' meses.';
+            } else {
+                txt.innerHTML = 'Informe o valor total da compra para calcular.';
+            }
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const valInput = document.querySelector('input[name="valor"]');
+        if (valInput) valInput.addEventListener('input', atualizarPreviewParcelas);
+    });
 </script>
 {% endblock %}

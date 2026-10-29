@@ -18,7 +18,9 @@ FORMAS_PAGAMENTO = ['Pix', 'Dinheiro', 'Cartão de Débito', 'Cartão de Crédit
 TIPOS_RECEITA = ['Venda', 'Encomenda', 'Serviço', 'Delivery', 'Feira/Evento', 'Outros']
 
 # Arquivos temporários da prévia da IA (fora do cookie de sessão)
+# Caminho calculado dinamicamente a partir deste arquivo, sem caminhos absolutos fixos.
 TMP_IA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'tmp_ia')
+os.makedirs(TMP_IA_DIR, exist_ok=True)  # Cria na importação do módulo
 
 
 def allowed_file(filename: str) -> bool:
@@ -26,6 +28,7 @@ def allowed_file(filename: str) -> bool:
 
 
 def _ensure_tmp_dir() -> None:
+    """Garante que a pasta temporária exista (chamada antes de cada gravação)."""
     os.makedirs(TMP_IA_DIR, exist_ok=True)
 
 
@@ -119,9 +122,14 @@ def processar():
     if resultado.get('modo_demo'):
         flash('Modo demonstração ativo: configure sua GEMINI_API_KEY no arquivo .env para análise ao vivo.', 'warning')
     elif resultado.get('ia_sucesso'):
-        flash('Nota fiscal interpretada com sucesso pela IA! Revise os dados abaixo.', 'success')
+        flash('Nota fiscal interpretada com sucesso! Revise os dados abaixo antes de confirmar.', 'success')
     else:
-        flash('Aviso: Houve uma instabilidade na IA. Os campos foram preenchidos com dados padrão para sua revisão.', 'warning')
+        # Exibe a mensagem específica retornada pelo serviço (ex.: erro do extrator ou Ollama indisponível)
+        erro_msg = resultado.get(
+            'erro_msg',
+            'Não foi possível extrair os dados automaticamente. Por favor, preencha os campos manualmente.'
+        )
+        flash(f'⚠️ {erro_msg}', 'warning')
 
     return redirect(url_for('ia_fiscal.revisar'))
 
@@ -195,7 +203,7 @@ def confirmar():
     except (ValueError, TypeError):
         data_registro = date.today()
 
-    # Persiste permanentemente o comprovante do upload da IA
+    # Persiste permanentemente o comprovante do upload da IA de forma otimizada
     ia_session = session.get('ia_preview', {})
     token = ia_session.get('file_token')
     ext = ia_session.get('ext')
@@ -204,18 +212,8 @@ def confirmar():
     if token and ext:
         caminho_origem = _preview_path(token, ext)
         if os.path.isfile(caminho_origem):
-            pasta_comprovantes = current_app.config.get(
-                'UPLOAD_COMPROVANTES_DIR',
-                os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'uploads', 'comprovantes')
-            )
-            os.makedirs(pasta_comprovantes, exist_ok=True)
-            comprovante_nome = f"{token}.{ext}"
-            caminho_destino = os.path.join(pasta_comprovantes, comprovante_nome)
-            try:
-                shutil.copy2(caminho_origem, caminho_destino)
-            except OSError as e:
-                logger.warning(f"Não foi possível salvar comprovante permanente: {e}")
-                comprovante_nome = None
+            from app.services.comprovante_service import promover_temporario_para_comprovante
+            comprovante_nome = promover_temporario_para_comprovante(caminho_origem, ext)
 
     if tipo_transacao == 'despesa':
         # Lança cada item como despesa (ou distribui em parcelas caso parcelado)

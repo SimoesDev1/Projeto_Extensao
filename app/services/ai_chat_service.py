@@ -102,9 +102,15 @@ INSTRUÇÕES:
             content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
             return content or "Não foi possível gerar uma resposta."
         except requests.exceptions.ConnectionError:
-            return "⚠️ O serviço de IA (Ollama) não está disponível no momento. Verifique se ele está rodando localmente."
+            logger.warning("AiChatService: Ollama indisponível (ConnectionError).")
+            return "⚠️ O assistente financeiro está temporariamente indisponível. O serviço Ollama não está em execução — verifique se ele foi iniciado corretamente."
         except requests.exceptions.Timeout:
-            return "⏱️ A IA demorou demais para responder. Tente uma pergunta mais curta."
+            logger.warning("AiChatService: timeout ao aguardar resposta do Ollama.")
+            return "⏱️ O assistente demorou demais para responder. Tente novamente com uma pergunta mais curta ou aguarde alguns instantes."
+        except requests.RequestException as e:
+            logger.exception("AiChatService: erro de comunicação com o Ollama: %s", e)
+            return "⚠️ Erro de comunicação com o assistente financeiro. Tente novamente em alguns instantes."
         except Exception as e:
-            logger.error(f"Erro no AiChatService: {e}")
-            return "❌ Ocorreu um erro ao consultar a IA."
+            # Loga com traceback completo sem engolir a exceção
+            logger.exception("AiChatService: erro inesperado ao consultar o modelo: %s", e)
+            return "❌ Ocorreu um erro inesperado ao consultar o assistente. Tente novamente."

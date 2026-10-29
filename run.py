@@ -24,7 +24,22 @@ def seed_categorias():
     db.session.remove()
 
 
+import os
+import threading
+import webbrowser
+
+
+def abrir_navegador():
+    try:
+        webbrowser.open('http://127.0.0.1:5000')
+    except Exception:
+        pass
+
+
 if __name__ == '__main__':
     with app.app_context():
         seed_categorias()
-    app.run(debug=True)
+    # Abre o navegador automaticamente
+    if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
+        threading.Timer(1.5, abrir_navegador).start()
+    app.run(host='127.0.0.1', port=5000, debug=False)

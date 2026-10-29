@@ -14,3 +14,6 @@ pdfplumber>=0.11.0
 pypdf>=5.0.0
 rapidocr-onnxruntime>=1.2.0
 numpy
+Pillow>=10.0.0
+requests>=2.30.0
+python-dateutil>=2.8.0

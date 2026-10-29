@@ -65,14 +65,10 @@ def nova():
             if 'comprovante' in request.files:
                 file = request.files['comprovante']
                 if file and file.filename != '':
-                    import os, uuid
-                    from flask import current_app
-                    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
-                    if ext in ['png', 'jpg', 'jpeg', 'webp', 'pdf']:
-                        comprovante_nome = f"{uuid.uuid4()}.{ext}"
-                        caminho = os.path.join(current_app.config['UPLOAD_COMPROVANTES_DIR'], comprovante_nome)
-                        file.save(caminho)
-                        dados['comprovante'] = comprovante_nome
+                    from app.services.comprovante_service import salvar_e_otimizar_comprovante
+                    comprovante_salvo = salvar_e_otimizar_comprovante(file)
+                    if comprovante_salvo:
+                        dados['comprovante'] = comprovante_salvo
 
             ReceitaService.criar_receita(dados)
             logger.info(f"Receita criada por usuário {session['id_usuario']}: R${dados['valor']}")

@@ -152,16 +152,23 @@ class GastoService:
         if not gasto:
             return 0
 
+        from app.services.comprovante_service import remover_arquivo_comprovante
+        comprovante = gasto.comprovante
+
         if excluir_todas_parcelas and gasto.id_parcelamento:
             qtd = Gasto.query.filter_by(
                 id_parcelamento=gasto.id_parcelamento,
                 id_usuario=gasto.id_usuario
             ).delete()
             db.session.commit()
+            if comprovante:
+                remover_arquivo_comprovante(comprovante)
             return qtd
 
         db.session.delete(gasto)
         db.session.commit()
+        if comprovante:
+            remover_arquivo_comprovante(comprovante)
         return 1
 
     @staticmethod

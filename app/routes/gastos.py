@@ -4,7 +4,7 @@ from io import StringIO
 from datetime import datetime, date
 
 from flask import (Blueprint, render_template, redirect, url_for,
-                   request, flash, session, Response, send_file)
+                   request, flash, session, Response, send_file, jsonify)
 
 from app.services.gasto_service import GastoService
 from app.services.categoria_service import CategoriaService
@@ -64,7 +64,8 @@ def novo():
                 'forma_pagamento': request.form.get('forma_pagamento'),
                 'descricao': request.form.get('descricao') or None,
                 'id_usuario': session['id_usuario'],
-                'id_categoria': int(request.form.get('id_categoria', 0))
+                'id_categoria': int(request.form.get('id_categoria', 0)),
+                'is_pago': request.form.get('is_pago') == 'on'
             }
             if dados['valor'] <= 0:
                 flash('O valor da despesa deve ser maior que zero.', 'danger')
@@ -88,14 +89,10 @@ def novo():
             if 'comprovante' in request.files:
                 file = request.files['comprovante']
                 if file and file.filename != '':
-                    import os, uuid
-                    from flask import current_app
-                    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
-                    if ext in ['png', 'jpg', 'jpeg', 'webp', 'pdf']:
-                        comprovante_nome = f"{uuid.uuid4()}.{ext}"
-                        caminho = os.path.join(current_app.config['UPLOAD_COMPROVANTES_DIR'], comprovante_nome)
-                        file.save(caminho)
-                        dados['comprovante'] = comprovante_nome
+                    from app.services.comprovante_service import salvar_e_otimizar_comprovante
+                    comprovante_salvo = salvar_e_otimizar_comprovante(file)
+                    if comprovante_salvo:
+                        dados['comprovante'] = comprovante_salvo
 
         except (ValueError, TypeError):
             flash('Dados inválidos. Verifique o formulário.', 'danger')
@@ -134,7 +131,8 @@ def editar(id):
                 'data_gasto': datetime.strptime(request.form.get('data_gasto'), '%Y-%m-%d').date(),
                 'forma_pagamento': request.form.get('forma_pagamento'),
                 'descricao': request.form.get('descricao') or None,
-                'id_categoria': int(request.form.get('id_categoria', 0))
+                'id_categoria': int(request.form.get('id_categoria', 0)),
+                'is_pago': request.form.get('is_pago') == 'on'
             }
             if dados['valor'] <= 0:
                 flash('O valor da despesa deve ser maior que zero.', 'danger')
@@ -242,7 +240,7 @@ def exportar_csv():
 
     si = StringIO()
     cw = csv.writer(si)
-    cw.writerow(['Data', 'Descricao', 'Categoria', 'Forma de Pagamento', 'Valor'])
+    cw.writerow(['Data', 'Descricao', 'Categoria', 'Forma de Pagamento', 'Valor', 'Pago'])
 
     for g in gastos:
         cw.writerow([
@@ -250,9 +248,24 @@ def exportar_csv():
             g.descricao or '',
             g.categoria.nome_categoria,
             g.forma_pagamento,
-            f'{float(g.valor):.2f}'
+            f'{float(g.valor):.2f}',
+            'Sim' if g.is_pago else 'Não'
         ])
 
     output = Response(si.getvalue().encode('utf-8-sig'), mimetype='text/csv')
     output.headers["Content-Disposition"] = f"attachment; filename={filename}"
     return output
+
+
+@gastos_bp.route('/<int:id>/pago', methods=['POST'])
+@login_required
+def marcar_como_pago(id):
+    gasto = GastoService.buscar_por_id(id)
+    if not gasto or gasto.id_usuario != session['id_usuario']:
+        return jsonify({'error': 'Despesa não encontrada.'}), 404
+
+    gasto.is_pago = not gasto.is_pago
+    GastoService.atualizar_gasto(id, {'is_pago': gasto.is_pago})
+    logger.info(f"Status de pagamento da despesa {id} invertido por usuário {session['id_usuario']}: {gasto.is_pago}")
+
+    return jsonify({'pago': gasto.is_pago})

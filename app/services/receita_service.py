@@ -74,8 +74,12 @@ class ReceitaService:
     def excluir_receita(id_receita: int) -> None:
         receita = ReceitaService.buscar_por_id(id_receita)
         if receita:
+            from app.services.comprovante_service import remover_arquivo_comprovante
+            comprovante = receita.comprovante
             db.session.delete(receita)
             db.session.commit()
+            if comprovante:
+                remover_arquivo_comprovante(comprovante)
 
     @staticmethod
     def calcular_total(receitas: list[Receita]) -> Decimal:

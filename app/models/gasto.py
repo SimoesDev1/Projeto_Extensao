@@ -29,7 +29,7 @@ class Gasto(db.Model):
     dia_recorrencia = db.Column(db.Integer, nullable=True)
 
     # Pago / pendente (útil para controle de contas a pagar)
-    is_pago = db.Column(db.Boolean, nullable=False, default=True)
+    is_pago = db.Column(db.Boolean, nullable=False, default=False)
 
     @property
     def is_parcelado(self) -> bool:

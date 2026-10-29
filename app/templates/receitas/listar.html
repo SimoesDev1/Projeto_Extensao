@@ -1,97 +1,30 @@
 {% extends 'base.html' %}
-{% block title %}Despesas{% endblock %}
-{% block topbar_title %}<i class="bi bi-receipt" style="color:var(--amber);margin-right:8px;"></i>Despesas{% endblock %}
+{% block title %}Minhas Receitas{% endblock %}
+{% block topbar_title %}<i class="bi bi-wallet2" style="color:var(--green);margin-right:8px;"></i>Minhas Receitas{% endblock %}
 {% block content %}
 
 <div class="page-header">
     <div>
-        <h1 class="page-title">Despesas</h1>
+        <h1 class="page-title">Receitas / Ganhos</h1>
         <p class="page-subtitle">
             {% if mes and ano %}
-                Exibindo registros de {{ "%02d"|format(mes) }}/{{ ano }}
+                Exibindo {{ receitas|length }} registro(s) em {{ "%02d"|format(mes) }}/{{ ano }}
             {% else %}
-                Todos os registros cadastrados (Página {{ paginacao.page }} de {{ paginacao.pages or 1 }})
+                Todos os ganhos registrados
             {% endif %}
-            {% if busca %} • Busca: "{{ busca }}"{% endif %}
         </p>
     </div>
-    <div style="display:flex; gap:10px;">
-        <a href="{{ url_for('ia_fiscal.upload') }}" class="btn btn-outline" style="border-color:#a855f7; color:#c084fc;">
-            <i class="bi bi-stars"></i> Ler Nota com IA
-        </a>
-        <a href="{{ url_for('gastos.novo') }}" class="btn btn-primary">
-            <i class="bi bi-plus-circle-fill"></i> Nova Despesa
-        </a>
-    </div>
+    <a href="{{ url_for('receitas.nova') }}" class="btn btn-success">
+        <i class="bi bi-plus-circle-fill"></i> Nova Receita
+    </a>
 </div>
 
-<!-- Card de Projeção de Faturas e Parcelas Futuras -->
-{% if projecoes %}
-<div class="card" style="margin-bottom: 20px; background: linear-gradient(135deg, rgba(168, 85, 247, 0.08) 0%, rgba(30, 41, 59, 0.4) 100%); border: 1px solid rgba(168, 85, 247, 0.25);">
-    <div class="card-body" style="padding: 16px 20px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom: 12px;">
-            <div>
-                <h3 style="font-size: 0.95rem; font-weight: 700; color: #e9d5ff; margin:0; display:flex; align-items:center; gap:8px;">
-                    <i class="bi bi-calendar-check" style="color:#c084fc;"></i> Projeção de Faturas Futuras (Parcelas no Cartão)
-                </h3>
-                <span style="font-size: 0.8rem; color: var(--text-muted);">Comprometimento financeiro já registrado para os próximos meses</span>
-            </div>
-            <a href="{{ url_for('gastos.listar', parcelados=1) }}" class="btn btn-outline btn-sm" style="font-size:0.78rem; padding:4px 10px; border-color:rgba(168,85,247,0.4); color:#c084fc;">
-                <i class="bi bi-filter"></i> Ver Apenas Parceladas
-            </a>
-        </div>
-        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px;">
-            {% for p in projecoes %}
-            {% set nomes_m = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
-            <div style="background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px;">
-                <div style="font-size:0.75rem; color:var(--text-subtle); text-transform:uppercase; font-weight:600;">
-                    {{ nomes_m[p.mes] }}/{{ p.ano }}
-                </div>
-                <div style="font-size: 1.15rem; font-weight: 800; color: {% if p.total_parcelas > 0 %}var(--red){% else %}var(--text-muted){% endif %}; margin-top: 4px;">
-                    R$ {{ "%.2f"|format(p.total_parcelas)|replace('.',',') }}
-                </div>
-                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">
-                    {{ p.qtd_parcelas }} parcela(s) a vencer
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-</div>
-{% endif %}
-
-<!-- Card principal -->
 <div class="card">
-
-    <!-- Barra de Filtros e Busca -->
     <div class="filter-bar">
         <form method="GET" style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; flex:1;">
-            <!-- Busca textual -->
-            <div class="form-group" style="flex: 1; min-width: 180px;">
-                <label class="form-label">Buscar</label>
-                <div style="position:relative;">
-                    <input type="text" name="busca" class="form-control"
-                           placeholder="Buscar por descrição..." value="{{ busca }}">
-                </div>
-            </div>
-
-            <!-- Categoria -->
-            <div class="form-group" style="min-width: 140px;">
-                <label class="form-label">Categoria</label>
-                <select name="id_categoria" class="form-select">
-                    <option value="">Todas</option>
-                    {% for cat in categorias %}
-                    <option value="{{ cat.id_categoria }}" {% if id_categoria == cat.id_categoria %}selected{% endif %}>
-                        {{ cat.nome_categoria }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <!-- Mês -->
-            <div class="form-group" style="width: 120px;">
+            <div class="form-group">
                 <label class="form-label">Mês</label>
-                <select name="mes" class="form-select">
+                <select name="mes" class="form-select" style="width:130px;">
                     <option value="">Todos</option>
                     {% set meses_nomes = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
                     {% for m in range(1, 13) %}
@@ -101,27 +34,16 @@
                     {% endfor %}
                 </select>
             </div>
-
-            <!-- Ano -->
-            <div class="form-group" style="width: 90px;">
+            <div class="form-group">
                 <label class="form-label">Ano</label>
-                <input type="number" name="ano" class="form-control"
+                <input type="number" name="ano" class="form-control" style="width:90px;"
                        placeholder="Ano" value="{{ ano or '' }}" min="2020" max="2099">
             </div>
-
-            <!-- Apenas parceladas -->
-            <div class="form-group" style="display:flex; align-items:center; padding-bottom: 8px;">
-                <label style="display:flex; align-items:center; gap:6px; font-size:0.83rem; cursor:pointer; color:var(--text-muted); margin-bottom:0; white-space:nowrap;">
-                    <input type="checkbox" name="parcelados" value="1" {% if parcelados %}checked{% endif %} onchange="this.form.submit()">
-                    <span><i class="bi bi-credit-card-2-front" style="color:#c084fc;"></i> Parceladas</span>
-                </label>
-            </div>
-
-            <button type="submit" class="btn btn-primary btn-sm" style="height: 38px;">
-                <i class="bi bi-funnel-fill"></i> Filtrar
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-filter"></i> Filtrar
             </button>
-            {% if mes or ano or busca or id_categoria or parcelados %}
-            <a href="{{ url_for('gastos.listar') }}" class="btn btn-outline btn-sm" style="height: 38px;" title="Limpar filtros">
+            {% if mes or ano %}
+            <a href="{{ url_for('receitas.listar') }}" class="btn btn-outline btn-sm">
                 <i class="bi bi-x-circle"></i> Limpar
             </a>
             {% endif %}
@@ -130,176 +52,67 @@
         <!-- Botões de Exportação -->
         <div style="display:flex; gap:8px;">
             {% if mes and ano %}
-            <a href="{{ url_for('gastos.exportar', mes=mes, ano=ano) }}"
+            <a href="{{ url_for('receitas.exportar', mes=mes, ano=ano) }}"
                class="btn btn-export btn-sm" title="Baixar relatório PDF">
                 <i class="bi bi-file-earmark-pdf-fill"></i> PDF
             </a>
-            <a href="{{ url_for('gastos.exportar_csv', mes=mes, ano=ano) }}"
+            <a href="{{ url_for('receitas.exportar_csv', mes=mes, ano=ano) }}"
                class="btn btn-outline btn-sm" title="Baixar dados em CSV">
                 <i class="bi bi-file-earmark-spreadsheet-fill"></i> CSV
             </a>
             {% else %}
-            <a href="{{ url_for('gastos.exportar') }}"
+            <a href="{{ url_for('receitas.exportar') }}"
                class="btn btn-export btn-sm" title="Baixar todos os dados em PDF">
-                <i class="bi bi-file-earmark-pdf-fill"></i> PDF
+                <i class="bi bi-file-earmark-pdf-fill"></i> Exportar Tudo (PDF)
             </a>
-            <a href="{{ url_for('gastos.exportar_csv') }}"
+            <a href="{{ url_for('receitas.exportar_csv') }}"
                class="btn btn-outline btn-sm" title="Baixar todos os dados em CSV">
-                <i class="bi bi-file-earmark-spreadsheet-fill"></i> CSV
+                <i class="bi bi-file-earmark-spreadsheet-fill"></i> Exportar Tudo (CSV)
             </a>
             {% endif %}
         </div>
     </div>
 
-    <!-- Tabela de Despesas -->
     <table class="table">
         <thead>
             <tr>
                 <th>Data</th>
                 <th>Descrição</th>
-                <th>Categoria</th>
-                <th>Pagamento</th>
+                <th>Recebimento</th>
                 <th>Valor</th>
                 <th style="text-align:right;">Ações</th>
             </tr>
         </thead>
         <tbody>
-            {% for gasto in gastos %}
+            {% for receita in receitas %}
             <tr>
-                <td style="white-space:nowrap; color:var(--text-muted); font-size:0.82rem;">
-                    {{ gasto.data_gasto.strftime('%d/%m/%Y') }}
-                </td>
-                <td>
-                    <a href="{{ url_for('gastos.detalhes', id=gasto.id_gasto) }}" style="color:var(--text-primary); text-decoration:none; font-weight:500;">
-                        {{ gasto.descricao or '—' }}
-                    </a>
-                    {% if gasto.total_parcelas and gasto.total_parcelas > 1 %}
-                    <span class="badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.35); font-size: 0.72rem; padding: 2px 7px; margin-left: 6px;" title="Compra Parcelada">
-                        <i class="bi bi-credit-card-2-front"></i> {{ gasto.parcela_atual }}/{{ gasto.total_parcelas }}
-                    </span>
-                    {% endif %}
-                    {% if gasto.comprovante %}
-                    <a href="{{ url_for('gastos.detalhes', id=gasto.id_gasto) }}" class="badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); font-size: 0.72rem; padding: 2px 7px; margin-left: 4px; text-decoration:none;" title="Possui comprovante / nota fiscal anexada">
-                        <i class="bi bi-paperclip"></i> Anexo
-                    </a>
-                    {% endif %}
-                    {% if gasto.is_pago %}
-                    <span class="badge" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.35); font-size: 0.72rem; padding: 2px 7px; margin-left: 4px;">
-                        <i class="bi bi-check2-circle"></i> Pago
-                    </span>
-                    {% else %}
-                    <span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); font-size: 0.72rem; padding: 2px 7px; margin-left: 4px;">
-                        <i class="bi bi-hourglass-split"></i> Pendente
-                    </span>
-                    {% endif %}
-                </td>
-                <td><span class="badge badge-default">{{ gasto.categoria.nome_categoria }}</span></td>
-                <td style="color:var(--text-muted); font-size:0.85rem;">{{ gasto.forma_pagamento }}</td>
-                <td class="valor-negativo" style="white-space:nowrap;">
-                    R$ {{ "%.2f"|format(gasto.valor)|replace(".",",") }}
-                </td>
+                <td style="color:var(--text-muted); font-size:0.82rem;">{{ receita.data_receita.strftime('%d/%m/%Y') }}</td>
+                <td>{{ receita.descricao or '—' }}</td>
+                <td><span class="badge badge-success">{{ receita.forma_recebimento }}</span></td>
+                <td class="valor-positivo">R$ {{ "%.2f"|format(receita.valor)|replace(".",",") }}</td>
                 <td>
                     <div style="display:flex; gap:6px; justify-content:flex-end;">
-                        <a href="{{ url_for('gastos.detalhes', id=gasto.id_gasto) }}"
-                           class="btn btn-ghost btn-sm btn-icon" title="Ver Detalhes" style="color:#60a5fa;">
-                            <i class="bi bi-eye"></i>
-                        </a>
-                        <a href="{{ url_for('gastos.editar', id=gasto.id_gasto) }}"
-                           class="btn btn-ghost btn-sm btn-icon" title="Editar">
-                            <i class="bi bi-pencil"></i>
-                        </a>
-                        <form method="POST" action="{{ url_for('gastos.excluir', id=gasto.id_gasto) }}"
-                              data-confirm="Tem certeza que deseja excluir esta parcela (R$ {{ '%.2f'|format(gasto.valor)|replace('.',',') }})?">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="btn btn-danger btn-sm btn-icon" title="Excluir esta parcela">
-                                <i class="bi bi-trash3"></i>
-                            </button>
+                        <a href="{{ url_for('receitas.editar', id=receita.id_receita) }}" class="btn btn-ghost btn-sm btn-icon"><i class="bi bi-pencil"></i></a>
+                        <form method="POST" action="{{ url_for('receitas.excluir', id=receita.id_receita) }}" onsubmit="return confirm('Deseja excluir esta receita?')">
+                            <button type="submit" class="btn btn-danger btn-sm btn-icon"><i class="bi bi-trash3"></i></button>
                         </form>
-                        {% if gasto.total_parcelas and gasto.total_parcelas > 1 and gasto.id_parcelamento %}
-                        <form method="POST" action="{{ url_for('gastos.excluir', id=gasto.id_gasto) }}"
-                              data-confirm="ATENÇÃO: Deseja excluir TODAS as {{ gasto.total_parcelas }} parcelas desta compra?">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="excluir_todas" value="1">
-                            <button type="submit" class="btn btn-ghost btn-sm btn-icon" title="Excluir todas as {{ gasto.total_parcelas }} parcelas desta compra" style="color:var(--red);">
-                                <i class="bi bi-calendar-x"></i>
-                            </button>
-                        </form>
-                        {% endif %}
                     </div>
                 </td>
             </tr>
             {% else %}
-            <tr>
-                <td colspan="6">
-                    <div class="empty-state">
-                        <i class="bi bi-inbox"></i>
-                        <p>Nenhuma despesa encontrada para os critérios informados.</p>
-                    </div>
-                </td>
-            </tr>
+            <tr><td colspan="5"><div class="empty-state"><i class="bi bi-inbox"></i><p>Nenhuma receita encontrada.</p></div></td></tr>
             {% endfor %}
         </tbody>
-
-        <!-- Linha de total na página -->
-        {% if gastos %}
+        {% if mes and ano and receitas %}
         <tfoot>
             <tr class="table-total">
-                <td colspan="4" style="color:var(--text-muted); font-size:0.85rem;">
-                    Total listado nesta página ({{ gastos|length }} itens)
-                </td>
-                <td class="valor-negativo" style="white-space:nowrap;">
-                    R$ {{ "%.2f"|format(total)|replace(".",",") }}
-                </td>
+                <td colspan="3">Total de Receitas no Período</td>
+                <td class="valor-positivo">R$ {{ "%.2f"|format(total)|replace(".",",") }}</td>
                 <td></td>
             </tr>
         </tfoot>
         {% endif %}
     </table>
-
-    <!-- Paginação -->
-    {% if paginacao and paginacao.pages > 1 %}
-    <div class="pagination-container">
-        <div class="pagination-info">
-            Página {{ paginacao.page }} de {{ paginacao.pages }} (Total: {{ paginacao.total }} registros)
-        </div>
-        <div class="pagination-controls">
-            <!-- Anterior -->
-            {% if paginacao.has_prev %}
-            <a href="{{ url_for('gastos.listar', page=paginacao.prev_num, mes=mes, ano=ano, busca=busca, id_categoria=id_categoria) }}"
-               class="page-btn" title="Página anterior">
-                <i class="bi bi-chevron-left"></i>
-            </a>
-            {% else %}
-            <span class="page-btn disabled"><i class="bi bi-chevron-left"></i></span>
-            {% endif %}
-
-            <!-- Números de Página -->
-            {% for p in paginacao.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
-                {% if p %}
-                    {% if p == paginacao.page %}
-                        <span class="page-btn active">{{ p }}</span>
-                    {% else %}
-                        <a href="{{ url_for('gastos.listar', page=p, mes=mes, ano=ano, busca=busca, id_categoria=id_categoria) }}"
-                           class="page-btn">{{ p }}</a>
-                    {% endif %}
-                {% else %}
-                    <span class="page-btn disabled">…</span>
-                {% endif %}
-            {% endfor %}
-
-            <!-- Próximo -->
-            {% if paginacao.has_next %}
-            <a href="{{ url_for('gastos.listar', page=paginacao.next_num, mes=mes, ano=ano, busca=busca, id_categoria=id_categoria) }}"
-               class="page-btn" title="Próxima página">
-                <i class="bi bi-chevron-right"></i>
-            </a>
-            {% else %}
-            <span class="page-btn disabled"><i class="bi bi-chevron-right"></i></span>
-            {% endif %}
-        </div>
-    </div>
-    {% endif %}
-
 </div>
 
 {% endblock %}

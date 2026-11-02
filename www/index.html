@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doce como Mel</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #fffbeb, #fef3c7);
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            text-align: center;
+        }
+        .container {
+            max-width: 360px;
+            padding: 24px;
+        }
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid #fde68a;
+            border-top: 4px solid #f59e0b;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 8px;
+            color: #b45309;
+        }
+        p {
+            font-size: 0.95rem;
+            color: #64748b;
+            line-height: 1.5;
+        }
+        .btn {
+            display: inline-block;
+            margin-top: 16px;
+            padding: 10px 20px;
+            background: #f59e0b;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner"></div>
+        <h1>Conectando...</h1>
+        <p id="msg">Iniciando o aplicativo Doce como Mel.</p>
+        <button id="retry-btn" class="btn" style="display:none;" onclick="location.reload()">Tentar novamente</button>
+    </div>
+    <script>
+        // Timeout para exibir botão de retry caso o backend demore
+        setTimeout(() => {
+            const btn = document.getElementById('retry-btn');
+            const msg = document.getElementById('msg');
+            if (btn && msg) {
+                btn.style.display = 'inline-block';
+                msg.textContent = 'Verifique sua conexão com o servidor.';
+            }
+        }, 8000);
+    </script>
+</body>
+</html>
+

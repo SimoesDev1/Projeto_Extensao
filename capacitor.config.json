@@ -1,0 +1,9 @@
+{
+  "appId": "com.exemplo.app",
+  "appName": "Nome do App",
+  "webDir": "www",
+  "server": {
+    "url": "[URL_PUBLICA_DO_BACKEND]",
+    "androidScheme": "https"
+  }
+}

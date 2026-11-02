@@ -11,7 +11,17 @@
     <a href="{{ url_for('receitas.listar') }}" class="btn btn-outline btn-sm">Voltar</a>
 </div>
 
-<div class="form-card">
+<div class="entry-tabs" style="display:flex; gap:10px; margin-bottom:20px;">
+    <button id="tab-manual" class="entry-tab-btn active" onclick="switchTab('manual')">
+        <i class="bi bi-pencil-square"></i> Cadastro Manual
+    </button>
+    <button id="tab-ia" class="entry-tab-btn" onclick="switchTab('ia')">
+        <i class="bi bi-stars" style="color:#c084fc;"></i> Ler com IA
+        <span class="tab-badge">NOVO</span>
+    </button>
+</div>
+
+<div id="painel-manual" class="form-card">
     <div class="form-card-header">
         <i class="bi bi-wallet2" style="color:var(--green);"></i>
         <span class="form-card-title">Dados do Recebimento</span>
@@ -52,4 +62,211 @@
     </div>
 </div>
 
+<!-- PAINEL: LEITURA COM IA -->
+<div id="painel-ia" class="form-card" style="display:none; max-width:760px;">
+    <div class="form-card-header" style="justify-content:space-between;">
+        <div style="display:flex; align-items:center; gap:12px;">
+            <i class="bi bi-cpu-fill" style="color:#c084fc; font-size:1.3rem;"></i>
+            <span class="form-card-title">Ler Comprovante de Venda com Inteligencia Artificial</span>
+        </div>
+        <span style="font-size:0.8rem; color:var(--text-muted);">JPG, PNG, WEBP, PDF - Max. 10 MB</span>
+    </div>
+    <div class="form-card-body">
+        <p style="font-size:0.88rem; color:var(--text-muted); margin-bottom:20px; line-height:1.6;">
+            <i class="bi bi-info-circle" style="color:#c084fc; margin-right:6px;"></i>
+            Envie uma foto ou PDF do comprovante. A IA extrai automaticamente os itens, valores e categorias. Voce revisa tudo antes de salvar.
+        </p>
+
+        <form method="POST" action="{{ url_for('ia_fiscal.processar') }}" enctype="multipart/form-data" data-loading id="form-upload-ia-receita">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="origem" value="receita">
+
+            <div id="drop-zone-receita" class="drop-zone-ia" onclick="document.getElementById('input-file-receita').click();">
+                <div class="drop-zone-icon">
+                    <i class="bi bi-cloud-arrow-up-fill"></i>
+                </div>
+                <h3 class="drop-zone-title">Arraste sua nota fiscal aqui ou clique para selecionar</h3>
+                <p class="drop-zone-sub">Cupons de mercado, DANFE de NF-e, fotos do celular, comprovantes de PIX</p>
+
+                <input type="file" name="documento" id="input-file-receita" accept="image/*,application/pdf" style="display:none;" required>
+
+                <button type="button" class="btn btn-outline" style="pointer-events:none;">
+                    <i class="bi bi-folder2-open"></i> Escolher Arquivo
+                </button>
+
+                <div id="file-info-receita" class="file-info-ia" style="display:none;">
+                    <i class="bi bi-file-earmark-check" style="color:#c084fc;"></i>
+                    <span id="file-name-receita"></span>
+                </div>
+            </div>
+
+            <div class="form-actions" style="margin-top:24px;">
+                <button type="submit" id="btn-submit-ia-receita" class="btn-ia-submit">
+                    <i class="bi bi-stars"></i> Interpretar Nota com IA
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+
+<style>
+.entry-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+}
+.entry-tab-btn:hover {
+    border-color: rgba(192,132,252,0.4);
+    color: var(--text);
+}
+.entry-tab-btn.active {
+    background: rgba(192,132,252,0.1);
+    border-color: rgba(192,132,252,0.5);
+    color: #e9d5ff;
+}
+.tab-badge {
+    background: rgba(192,132,252,0.18);
+    color: #c084fc;
+    font-size: 0.6rem;
+    padding: 2px 7px;
+    border-radius: 99px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+.drop-zone-ia {
+    border: 2px dashed rgba(192,132,252,0.4);
+    border-radius: var(--radius-md);
+    padding: 48px 24px;
+    text-align: center;
+    background: rgba(192,132,252,0.03);
+    cursor: pointer;
+    transition: var(--transition);
+}
+.drop-zone-ia:hover, .drop-zone-ia.dragover {
+    border-color: #c084fc;
+    background: rgba(192,132,252,0.08);
+}
+.drop-zone-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: rgba(192,132,252,0.12);
+    color: #c084fc;
+    font-size: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+}
+.drop-zone-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 6px;
+}
+.drop-zone-sub {
+    font-size: 0.83rem;
+    color: var(--text-muted);
+    margin-bottom: 18px;
+}
+.file-info-ia {
+    margin-top: 16px;
+    padding: 10px 16px;
+    background: var(--surface-2);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text);
+}
+.btn-ia-submit {
+    width: 100%;
+    justify-content: center;
+    height: 46px;
+    font-size: 1rem;
+    background: linear-gradient(135deg, #a855f7, #7c3aed);
+    border: none;
+    color: #fff;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: var(--transition);
+}
+.btn-ia-submit:hover {
+    opacity: 0.88;
+    transform: translateY(-1px);
+}
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function switchTab(tab) {
+        const manualBtn = document.getElementById('tab-manual');
+        const iaBtn = document.getElementById('tab-ia');
+        const manualPanel = document.getElementById('painel-manual');
+        const iaPanel = document.getElementById('painel-ia');
+
+        if (tab === 'manual') {
+            manualBtn.classList.add('active');
+            iaBtn.classList.remove('active');
+            manualPanel.style.display = '';
+            iaPanel.style.display = 'none';
+        } else {
+            iaBtn.classList.add('active');
+            manualBtn.classList.remove('active');
+            iaPanel.style.display = '';
+            manualPanel.style.display = 'none';
+        }
+    }
+
+    (function () {
+        const zone = document.getElementById('drop-zone-receita');
+        const input = document.getElementById('input-file-receita');
+        const info = document.getElementById('file-info-receita');
+        const nameEl = document.getElementById('file-name-receita');
+
+        if (!zone || !input) return;
+
+        function showFile(file) {
+            nameEl.textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+            info.style.display = 'inline-flex';
+            zone.style.borderColor = '#a855f7';
+            zone.style.background = 'rgba(168,85,247,0.08)';
+        }
+
+        input.addEventListener('change', () => {
+            if (input.files.length > 0) showFile(input.files[0]);
+        });
+
+        zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+        zone.addEventListener('dragleave', () => { zone.classList.remove('dragover'); });
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            zone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                input.files = e.dataTransfer.files;
+                showFile(e.dataTransfer.files[0]);
+            }
+        });
+    })();
+</script>
 {% endblock %}

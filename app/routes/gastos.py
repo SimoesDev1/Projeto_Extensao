@@ -260,12 +260,13 @@ def exportar_csv():
 @gastos_bp.route('/<int:id>/pago', methods=['POST'])
 @login_required
 def marcar_como_pago(id):
+    from app import db
     gasto = GastoService.buscar_por_id(id)
     if not gasto or gasto.id_usuario != session['id_usuario']:
         return jsonify({'error': 'Despesa não encontrada.'}), 404
 
     gasto.is_pago = not gasto.is_pago
-    GastoService.atualizar_gasto(id, {'is_pago': gasto.is_pago})
+    db.session.commit()
     logger.info(f"Status de pagamento da despesa {id} invertido por usuário {session['id_usuario']}: {gasto.is_pago}")
 
     return jsonify({'pago': gasto.is_pago})

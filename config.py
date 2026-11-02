@@ -35,6 +35,10 @@ class Config:
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
+    # Configurações de API e CORS (suporte ao Capacitor / APK mantendo web intacto)
+    API_URL = os.getenv('API_URL', '')
+    CORS_ORIGINS = os.getenv('CORS_ORIGINS', '')
+
     # Ajusta as opções de conexão dinamicamente com base no banco utilizado
     if db_uri.startswith('sqlite'):
         SQLALCHEMY_ENGINE_OPTIONS = {

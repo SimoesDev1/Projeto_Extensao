@@ -12,7 +12,18 @@ config.py
 tmp_ia/
 tmp_reajuste/
 uploads/
-config.py
-tmp_ia/
-tmp_reajuste/
-uploads/
+
+# Node & Capacitor
+node_modules/
+npm-debug.log*
+
+# Android & Keystore
+*.keystore
+*.jks
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/.idea/
+android/app/*.keystore
+android/app/*.jks

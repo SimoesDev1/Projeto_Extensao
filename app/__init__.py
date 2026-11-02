@@ -1,16 +1,19 @@
+import os
 import logging
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_migrate import Migrate
+from flask_cors import CORS
 from config import Config
 
 db = SQLAlchemy()
 csrf = CSRFProtect()
 limiter = Limiter(key_func=get_remote_address, default_limits=[], storage_uri="memory://")
 migrate = Migrate()
+cors = CORS()
 
 # Logging básico
 logging.basicConfig(
@@ -21,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_app():
+    import os
     app = Flask(__name__)
     app.config.from_object(Config)
 
@@ -28,6 +32,32 @@ def create_app():
     csrf.init_app(app)
     limiter.init_app(app)
     migrate.init_app(app, db)
+
+    # ── Configuração de CORS (mantém origens existentes e adiciona Capacitor/localhost) ──
+    cors_origins_env = app.config.get('CORS_ORIGINS') or os.getenv('CORS_ORIGINS', '')
+    default_origins = [
+        'http://localhost',
+        'capacitor://localhost',
+        'http://localhost:5000',
+        'http://127.0.0.1:5000',
+        'http://localhost:8100'
+    ]
+    if cors_origins_env == '*':
+        cors.init_app(app, resources={r"/*": {"origins": "*"}})
+    else:
+        if cors_origins_env:
+            extra_origins = [o.strip() for o in cors_origins_env.split(',') if o.strip()]
+            allowed_origins = list(dict.fromkeys(default_origins + extra_origins))
+        else:
+            allowed_origins = default_origins
+
+        cors.init_app(
+            app,
+            resources={r"/*": {"origins": allowed_origins}},
+            supports_credentials=True,
+            allow_headers=["Content-Type", "Authorization", "X-CSRFToken", "X-Requested-With"],
+            methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+        )
 
     # Importa os models para que o SQLAlchemy os registre antes do create_all
     from app.models import Usuario, Categoria, Gasto, Receita
@@ -134,6 +164,19 @@ def create_app():
         import os
         from flask import send_from_directory
         return send_from_directory(os.path.join(app.static_folder, 'img'), 'favicon.ico')
+
+    # ── Keep-alive / Health Check (Público, sem auth, sem rate limit) ─────────
+    @app.route('/health', methods=['GET'])
+    @limiter.exempt
+    @csrf.exempt
+    def health():
+        try:
+            from sqlalchemy import text
+            db.session.execute(text('SELECT 1'))
+            return jsonify({'status': 'ok'}), 200
+        except Exception as e:
+            logger.error(f"Health check falhou: {e}")
+            return jsonify({'status': 'error', 'message': str(e)}), 503
 
     return app
 

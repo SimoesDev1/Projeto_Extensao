@@ -1106,3 +1106,12 @@ body {
     background: linear-gradient(90deg, #ef4444, #dc2626);
 }
 
+
+/* -- Animacao de entrada da sidebar (apenas desktop) -- */
+@media (min-width: 769px) {
+  .sidebar { animation: sidebar-in .8s ease both; }
+}
+@keyframes sidebar-in {
+  from { opacity: 0; transform: translateX(-100px); }
+  to   { opacity: 1; transform: none; }
+}

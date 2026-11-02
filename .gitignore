@@ -1,1 +1,66 @@
-node_modules
+# Segredos e Variáveis de Ambiente
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Chaves e Keystores Android
+*.keystore
+*.jks
+android/app/*.keystore
+android/app/*.jks
+
+# Android Builds e Configurações Locais
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/.idea/
+android/captures/
+
+# Python e Ambientes Virtuais
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Banco de Dados Local
+db/*.db
+db/*.sqlite
+db/*.sqlite3
+*.db
+*.sqlite
+*.sqlite3
+instance/
+
+# Uploads e Arquivos de Usuários (mantém apenas o .gitkeep)
+uploads/comprovantes/*
+!uploads/comprovantes/.gitkeep
+
+# Temporários e Backups
+tmp_ia/
+tmp_reajuste/
+arquivos_gastos.txt
+*.bak
+*.tmp
+*.log
+
+# Node & Dependências Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDEs e Ferramentas
+.idea/
+.vscode/
+.aider*
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

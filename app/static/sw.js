@@ -1,4 +1,4 @@
-const CACHE_NAME = 'doce-mel-v2';
+const CACHE_NAME = 'doce-mel-v3';
 
 self.addEventListener('install', event => {
     event.waitUntil(
@@ -26,12 +26,17 @@ self.addEventListener('fetch', event => {
     }
 
     if (event.request.url.includes('/static/')) {
+        // Network-first: sempre tenta o servidor; cache so como reserva offline
         event.respondWith(
-            caches.match(event.request)
-                .then(response => response || fetch(event.request).then(response => {
-                    caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()));
+            fetch(event.request)
+                .then(response => {
+                    if (response.ok) {
+                        const copia = response.clone();
+                        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copia));
+                    }
                     return response;
-                }))
+                })
+                .catch(() => caches.match(event.request))
         );
         return;
     }

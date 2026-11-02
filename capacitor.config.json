@@ -3,7 +3,7 @@
   "appName": "Nome do App",
   "webDir": "www",
   "server": {
-    "url": "[URL_PUBLICA_DO_BACKEND]",
+    "url": "https://doce-como-mel.onrender.com",
     "androidScheme": "https"
   }
 }

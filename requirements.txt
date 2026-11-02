@@ -20,3 +20,5 @@ python-dateutil>=2.8.0
 Flask-Cors>=4.0.0
 gunicorn>=22.0.0
 psycopg2-binary>= 2.9.13
+SQLAlchemy==2.0.43
+psycopg2-binary==2.9.13

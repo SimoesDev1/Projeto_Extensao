@@ -138,7 +138,7 @@ class AiFiscalService:
             if mimetype.endswith("pdf"):
                 # PDF: extração direta via pdfplumber
                 dados_extrator = extrator_nota.extrair_dados_pdf(file_bytes)
-            elif mimetype.startswith("image/"):
+            elif mimetype.startswith("image/") and os.getenv("OCR_IMAGEM", "1") == "1":
                 # Imagem: OCR via RapidOCR (CPU-only, sem GPU)
                 logger.info("Arquivo de imagem recebido (%s). Usando OCR para extração.", mimetype)
                 dados_extrator = extrator_nota.extrair_dados_imagem_ocr(file_bytes)

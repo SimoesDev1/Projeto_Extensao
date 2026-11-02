@@ -36,9 +36,13 @@ def abrir_navegador():
         pass
 
 
-if __name__ == '__main__':
-    with app.app_context():
+with app.app_context():
+    try:
         seed_categorias()
+    except Exception as e:
+        print(f"Seed categorias aviso: {e}")
+
+if __name__ == '__main__':
     # Abre o navegador automaticamente
     if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
         threading.Timer(1.5, abrir_navegador).start()

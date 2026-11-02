@@ -17,15 +17,28 @@ class Config:
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
 
+    # Ajusta cookie de sessão para HTTPS em produção (Render ou FLASK_ENV=production)
+    IS_PRODUCTION = (
+        os.getenv('RENDER') is not None
+        or os.getenv('FLASK_ENV') == 'production'
+        or os.getenv('ENV') == 'production'
+        or os.getenv('SESSION_COOKIE_SECURE', '').lower() in ('true', '1')
+    )
+    SESSION_COOKIE_SECURE = IS_PRODUCTION
+
     # CSRF via Flask-WTF
     WTF_CSRF_ENABLED = True
     WTF_CSRF_TIME_LIMIT = 3600  # 1 hora
 
-    # Prioriza DATABASE_URL do .env; resolve SQLite relativo para BASE_DIR
+    # Prioriza DATABASE_URL (PostgreSQL no Render/externo); trata postgres:// -> postgresql://
+    # Mantém fallback automático para SQLite local em desenvolvimento
     default_db = f'sqlite:///{os.path.join(BASE_DIR, "db", "doce_como_mel.db")}'
-    raw_db_uri = os.getenv('DATABASE_URL')
+    raw_db_uri = os.getenv('DATABASE_URL', '').strip()
     if not raw_db_uri:
         db_uri = default_db
+    elif raw_db_uri.startswith('postgres://'):
+        # SQLAlchemy 1.4+ requer o prefixo 'postgresql://'
+        db_uri = raw_db_uri.replace('postgres://', 'postgresql://', 1)
     elif raw_db_uri.startswith('sqlite:///') and not os.path.isabs(raw_db_uri.replace('sqlite:///', '')):
         rel_path = raw_db_uri.replace('sqlite:///', '')
         db_uri = f'sqlite:///{os.path.join(BASE_DIR, rel_path)}'
@@ -46,7 +59,9 @@ class Config:
             'pool_pre_ping': True,
         }
     else:
+        # PostgreSQL em produção (Render, Supabase, Neon)
         SQLALCHEMY_ENGINE_OPTIONS = {
-            'connect_args': {'connect_timeout': 30},
+            'connect_args': {'connect_timeout': 15},
             'pool_pre_ping': True,
+            'pool_recycle': 300,
         }

@@ -33,6 +33,11 @@ def create_app():
     limiter.init_app(app)
     migrate.init_app(app, db)
 
+    # ── Suporte a Reverse Proxy / HTTPS em Produção (Render / Nuvem) ───────
+    if app.config.get('SESSION_COOKIE_SECURE') or os.getenv('RENDER'):
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
     # ── Configuração de CORS (mantém origens existentes e adiciona Capacitor/localhost) ──
     cors_origins_env = app.config.get('CORS_ORIGINS') or os.getenv('CORS_ORIGINS', '')
     default_origins = [

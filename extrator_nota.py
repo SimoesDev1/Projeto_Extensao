@@ -52,8 +52,8 @@ def _imagem_bytes_para_texto_ocr(image_bytes: bytes) -> str:
 
     # Corrige rotação EXIF e amplia imagens pequenas para melhorar o OCR
     img = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes))).convert("RGB")
-    img.thumbnail((1600, 1600))
-    fator = min(3, max(1, round(1600 / max(img.size))))
+    img.thumbnail((1100, 1100))
+    fator = min(3, max(1, round(1100 / max(img.size))))
     if fator > 1:
         img = img.resize((img.width * fator, img.height * fator), Image.LANCZOS)
 

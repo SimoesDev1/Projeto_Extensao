@@ -1,0 +1,6 @@
+﻿services:
+  - type: web
+    name: doce-como-mel
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn run:app --timeout 120 --workers 1 --threads 2

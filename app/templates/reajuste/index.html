@@ -535,19 +535,51 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Loading spinner no envio
-    formReajuste.addEventListener('submit', function() {
+    // Envio com timeout e tratamento de erro
+    function pararLoading() {
+        btnProcessar.disabled = false;
+        btnProcessar.innerHTML = btnProcessar.dataset.textoOriginal || btnProcessar.innerHTML;
+        const spinner = document.getElementById('page-spinner');
+        if (spinner) spinner.style.display = 'none';
+    }
+
+    formReajuste.addEventListener('submit', async function(e) {
+        e.preventDefault();
         if (!inputPlanilha.files || !inputPlanilha.files[0]) {
             alert('Por favor, selecione uma imagem/print, documento PDF ou planilha antes de processar.');
-            return false;
+            return;
         }
+        btnProcessar.dataset.textoOriginal = btnProcessar.innerHTML;
         btnProcessar.disabled = true;
         btnProcessar.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Processando documento com API do Banco Central...';
-        
         const spinner = document.getElementById('page-spinner');
-        if (spinner) {
-            spinner.style.display = 'flex';
+        if (spinner) spinner.style.display = 'flex';
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 120000);
+        try {
+            const resp = await fetch(formReajuste.action, {
+                method: 'POST',
+                body: new FormData(formReajuste),
+                credentials: 'same-origin',
+                signal: controller.signal
+            });
+            if (!resp.ok) {
+                throw new Error('O servidor respondeu com erro ' + resp.status + '. Tente novamente em instantes.');
+            }
+            window.location.href = resp.url;
+        } catch (err) {
+            pararLoading();
+            alert(err.name === 'AbortError'
+                ? 'O processamento demorou demais. Tente com um arquivo menor ou novamente.'
+                : (err.message || 'Falha ao enviar o arquivo.'));
+        } finally {
+            clearTimeout(timer);
         }
+    });
+
+    window.addEventListener('pageshow', function(ev) {
+        if (ev.persisted) pararLoading();
     });
 });
 </script>

@@ -51,6 +51,10 @@ def _aquecer_ocr():
 
 
 if os.environ.get('OCR_AQUECER') == '1':
+    try:
+        import rapidocr_onnxruntime
+    except Exception as e:
+        print(f"Import OCR aviso: {e}")
     threading.Thread(target=_aquecer_ocr, daemon=True).start()
 
 

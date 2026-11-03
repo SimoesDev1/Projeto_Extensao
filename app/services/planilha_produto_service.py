@@ -24,6 +24,8 @@ from app.services.bacen_service import BacenService
 logger = logging.getLogger(__name__)
 
 # Instância preguiçosa do RapidOCR para processar imagens/prints locais
+import threading as _threading
+_OCR_LOCK = _threading.Lock()
 _OCR_ENGINE = None
 
 # Linha de lista de preços lida por OCR. Aceita variações reais do OCR:
@@ -38,6 +40,11 @@ _PRECO_QUALQUER = re.compile(r'(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+[.,]\d{2
 
 
 def _obter_ocr_engine():
+    with _OCR_LOCK:
+        return _criar_ocr_engine()
+
+
+def _criar_ocr_engine():
     global _OCR_ENGINE
     if _OCR_ENGINE is None:
         try:

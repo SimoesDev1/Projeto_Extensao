@@ -367,6 +367,8 @@ class PlanilhaProdutoService:
         """Abre a imagem, corrige a rotação (fotos de celular) e amplia imagens pequenas.
         Prints pequenos (ex.: 215 px de largura) perdem espaços e vírgulas no OCR sem isso."""
         img = ImageOps.exif_transpose(Image.open(io.BytesIO(conteudo))).convert('RGB')
+        if max(img.size) > 1600:
+            img.thumbnail((1600, 1600), Image.LANCZOS)
         fator = min(3, max(1, round(1600 / max(img.size))))
         if fator > 1:
             img = img.resize((img.width * fator, img.height * fator), Image.LANCZOS)
@@ -388,7 +390,10 @@ class PlanilhaProdutoService:
         except Exception:
             raise ValueError("Não foi possível abrir a imagem enviada. Envie um arquivo PNG, JPG ou WEBP válido.")
 
-        res, _ = engine(imagem)
+        try:
+            res, _ = engine(imagem, use_cls=False)
+        except TypeError:
+            res, _ = engine(imagem)
         if not res:
             raise ValueError("Não foi possível detectar texto ou números na imagem enviada. Certifique-se de que a imagem esteja nítida.")
 

@@ -44,8 +44,8 @@ with app.app_context():
 
 def _aquecer_ocr():
     try:
-        import extrator_nota
-        extrator_nota._obter_ocr_engine()
+        from app.services import planilha_produto_service as svc
+        svc._obter_ocr_engine()
     except Exception as e:
         print(f"Aquecimento OCR aviso: {e}")
 

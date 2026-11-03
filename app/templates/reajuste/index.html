@@ -536,6 +536,24 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Envio com timeout e tratamento de erro
+    async function reduzirImagem(arquivo, maxLado = 1600) {
+        try {
+            const bmp = await createImageBitmap(arquivo, { imageOrientation: 'from-image' });
+            const maior = Math.max(bmp.width, bmp.height);
+            if (maior <= maxLado) { bmp.close(); return null; }
+            const escala = maxLado / maior;
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(bmp.width * escala);
+            canvas.height = Math.round(bmp.height * escala);
+            canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+            bmp.close();
+            const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9));
+            return blob ? new File([blob], 'imagem.jpg', { type: 'image/jpeg' }) : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
     function pararLoading() {
         btnProcessar.disabled = false;
         btnProcessar.innerHTML = btnProcessar.dataset.textoOriginal || btnProcessar.innerHTML;
@@ -555,12 +573,19 @@ document.addEventListener('DOMContentLoaded', function() {
         const spinner = document.getElementById('page-spinner');
         if (spinner) spinner.style.display = 'flex';
 
+        const fd = new FormData(formReajuste);
+        const arq = inputPlanilha.files[0];
+        if (arq.type && arq.type.startsWith('image/')) {
+            const reduzida = await reduzirImagem(arq);
+            if (reduzida) fd.set(inputPlanilha.name, reduzida);
+        }
+
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 120000);
         try {
             const resp = await fetch(formReajuste.action, {
                 method: 'POST',
-                body: new FormData(formReajuste),
+                body: fd,
                 credentials: 'same-origin',
                 signal: controller.signal
             });

@@ -42,6 +42,18 @@ with app.app_context():
     except Exception as e:
         print(f"Seed categorias aviso: {e}")
 
+def _aquecer_ocr():
+    try:
+        import extrator_nota
+        extrator_nota._obter_ocr_engine()
+    except Exception as e:
+        print(f"Aquecimento OCR aviso: {e}")
+
+
+if os.environ.get('OCR_AQUECER') == '1':
+    threading.Thread(target=_aquecer_ocr, daemon=True).start()
+
+
 if __name__ == '__main__':
     # Abre o navegador automaticamente
     if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':

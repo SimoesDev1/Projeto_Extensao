@@ -8,6 +8,8 @@ from flask_limiter.util import get_remote_address
 from flask_migrate import Migrate
 from flask_cors import CORS
 from config import Config
+from flask import request
+from flask_wtf.csrf import CSRFError
 
 db = SQLAlchemy()
 csrf = CSRFProtect()
@@ -32,6 +34,21 @@ def create_app():
     csrf.init_app(app)
     limiter.init_app(app)
     migrate.init_app(app, db)
+    
+    # ── Diagnóstico temporário de erros CSRF ──
+    @app.errorhandler(CSRFError)
+    def tratar_erro_csrf(e):
+        logger.error(
+            "ERRO CSRF | "
+            f"Rota: {request.path} | "
+            f"Método: {request.method} | "
+            f"Motivo: {e.description} | "
+            f"Campo CSRF recebido: {'csrf_token' in request.form} | "
+            f"Cookie de sessão recebido: {'session' in request.cookies}"
+        )
+
+        return "Erro de segurança CSRF. Consulte os logs.", 400
+    
 
     # ── Suporte a Reverse Proxy / HTTPS em Produção (Render / Nuvem) ───────
     if app.config.get('SESSION_COOKIE_SECURE') or os.getenv('RENDER'):

@@ -29,14 +29,19 @@
         <span style="font-size:0.8rem; color:var(--text-muted);">Formatos: JPG, PNG, WEBP, PDF (Máx. 10MB)</span>
     </div>
     <div class="form-card-body">
-        <form method="POST" action="{{ url_for('ia_fiscal.processar') }}" enctype="multipart/form-data" data-loading id="form-upload-ia">
-            <input
-    type="hidden"
-    name="csrf_token"
-    id="csrf-token-field"
-    value="{{ csrf_token() }}"
-    autocomplete="off"
->
+
+    <form method="POST"
+          action="{{ url_for('ia_fiscal.processar') }}"
+          enctype="multipart/form-data"
+          id="form-upload-ia">
+
+        <input
+            type="hidden"
+            name="csrf_token"
+            id="csrf-token-field"
+            value="{{ csrf_token() }}"
+            autocomplete="off"
+        >
 
             <!-- ZONA DE DRAG & DROP -->
             <div id="drop-zone" class="drop-zone" style="border: 2px dashed rgba(192,132,252,0.4); border-radius: var(--radius-md); padding: 48px 24px; text-align: center; background: rgba(192,132,252,0.03); cursor: pointer; transition: var(--transition);">
@@ -114,63 +119,75 @@
 
 {% block scripts %}
 <script>
+    
+document.addEventListener('DOMContentLoaded', function () {
     const dropZone = document.getElementById('drop-zone');
     const inputFile = document.getElementById('input-file');
     const fileInfo = document.getElementById('file-info');
     const fileName = document.getElementById('file-name');
-
     const formUpload = document.getElementById('form-upload-ia');
-const csrfField = document.getElementById('csrf-token-field');
+    const csrfField = document.getElementById('csrf-token-field');
+    const submitButton = document.getElementById('btn-submit-ia');
 
-formUpload.addEventListener('submit', function (event) {
-    const formData = new FormData(this);
-
-    console.log('Diagnóstico CSRF:', {
-        campoExiste: !!csrfField,
-        tokenPreenchido: !!csrfField?.value,
-        campoDentroDoFormulario: csrfField
-            ? this.contains(csrfField)
-            : false,
-        tokenIncluidoNoFormData: formData.has('csrf_token')
-    });
-
-    if (!csrfField || !csrfField.value || !formData.has('csrf_token')) {
-        event.preventDefault();
-        alert('Não foi possível validar o formulário. Atualize a página e tente novamente.');
+    if (!formUpload || !inputFile || !dropZone) {
+        console.error('IA UPLOAD | Elementos do formulário não encontrados.');
+        return;
     }
-});
 
-    inputFile.addEventListener('change', () => {
+    inputFile.addEventListener('change', function () {
         if (inputFile.files.length > 0) {
             const file = inputFile.files[0];
-            fileName.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+
+            fileName.textContent =
+                `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+
             fileInfo.style.display = 'inline-flex';
             dropZone.style.borderColor = '#a855f7';
             dropZone.style.background = 'rgba(168,85,247,0.08)';
         }
     });
 
-    dropZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        dropZone.style.borderColor = '#c084fc';
-        dropZone.style.background = 'rgba(192,132,252,0.1)';
+    dropZone.addEventListener('dragover', function (event) {
+        event.preventDefault();
     });
 
-    dropZone.addEventListener('dragleave', () => {
-        dropZone.style.borderColor = 'rgba(192,132,252,0.4)';
-        dropZone.style.background = 'rgba(192,132,252,0.03)';
-    });
+    dropZone.addEventListener('drop', function (event) {
+        event.preventDefault();
 
-    dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        if (e.dataTransfer.files.length > 0) {
-            inputFile.files = e.dataTransfer.files;
-            const file = e.dataTransfer.files[0];
-            fileName.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
-            fileInfo.style.display = 'inline-flex';
-            dropZone.style.borderColor = '#a855f7';
-            dropZone.style.background = 'rgba(168,85,247,0.08)';
+        if (event.dataTransfer.files.length > 0) {
+            inputFile.files = event.dataTransfer.files;
+            inputFile.dispatchEvent(new Event('change', { bubbles: true }));
         }
     });
+
+    formUpload.addEventListener('submit', function (event) {
+        console.log('IA UPLOAD | Iniciando envio.');
+
+        const arquivo = inputFile.files[0];
+
+        if (!arquivo) {
+            event.preventDefault();
+            alert('Selecione uma imagem ou PDF antes de continuar.');
+            return;
+        }
+
+        if (!csrfField || !csrfField.value) {
+            event.preventDefault();
+            alert('Token de segurança ausente. Atualize a página.');
+            return;
+        }
+
+        console.log('IA UPLOAD | Arquivo:', {
+            nome: arquivo.name,
+            tamanho: arquivo.size,
+            tipo: arquivo.type
+        });
+
+        submitButton.disabled = true;
+        submitButton.innerHTML =
+            '<i class="bi bi-arrow-repeat"></i> Enviando documento...';
+    });
+});
+
 </script>
 {% endblock %}

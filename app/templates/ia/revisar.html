@@ -277,120 +277,83 @@
 {% endblock %}
 
 {% block scripts %}
+
 <script>
-    function setSectionEnabled(section, enabled) {
-        if (!section) return;
-        section.querySelectorAll('input, select, textarea').forEach(el => {
-            el.disabled = !enabled;
-        });
-    }
+    document.addEventListener('DOMContentLoaded', function () {
+        const dropZone = document.getElementById('drop-zone');
+        const inputFile = document.getElementById('input-file');
+        const fileInfo = document.getElementById('file-info');
+        const fileName = document.getElementById('file-name');
+        const formUpload = document.getElementById('form-upload-ia');
+        const csrfField = document.getElementById('csrf-token-field');
+        const submitButton = document.getElementById('btn-submit-ia');
 
-    function toggleTipoTransacao(tipo) {
-        const secDespesas = document.getElementById('secao-despesas');
-        const secReceita = document.getElementById('secao-receita');
-        const blocoParcelamento = document.getElementById('bloco-parcelamento');
-        const isReceita = tipo === 'receita';
-
-        secDespesas.style.display = isReceita ? 'none' : 'block';
-        secReceita.style.display = isReceita ? 'block' : 'none';
-        if (blocoParcelamento) {
-            blocoParcelamento.style.display = isReceita ? 'none' : 'block';
+        if (!dropZone || !inputFile || !formUpload) {
+            console.error('IA UPLOAD | Elementos do formulário não encontrados.');
+            return;
         }
 
-        // Campos desabilitados não bloqueiam a validação HTML5 nem são enviados
-        setSectionEnabled(secDespesas, !isReceita);
-        setSectionEnabled(secReceita, isReceita);
-        if (blocoParcelamento) {
-            setSectionEnabled(blocoParcelamento, !isReceita);
-        }
-    }
+        inputFile.addEventListener('change', function () {
+            if (inputFile.files && inputFile.files.length > 0) {
+                const file = inputFile.files[0];
 
-    function ajustarFormaPagamento(forma) {
-        const chk = document.getElementById('chk-parcelado');
-        if (forma === 'Cartão de Crédito') {
-            // Se mudou para cartão de crédito, sugere ou mantém parcelamento
-        } else if (chk && chk.checked) {
-            // Se mudou para dinheiro ou pix mas estava marcado parcelado, volta para cartão
-            const selFp = document.getElementById('sel-forma-pagamento');
-            if (selFp) selFp.value = 'Cartão de Crédito';
-        }
-    }
+                fileName.textContent =
+                    `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
 
-    function toggleParcelamento() {
-        const chk = document.getElementById('chk-parcelado');
-        const campos = document.getElementById('campos-parcelamento');
-        const selFp = document.getElementById('sel-forma-pagamento');
-
-        if (chk && campos) {
-            campos.style.display = chk.checked ? 'grid' : 'none';
-            if (chk.checked && selFp) {
-                selFp.value = 'Cartão de Crédito';
+                fileInfo.style.display = 'inline-flex';
+                dropZone.style.borderColor = '#a855f7';
+                dropZone.style.background = 'rgba(168,85,247,0.08)';
             }
-            atualizarPreviewParcelas();
-        }
-    }
-
-    function atualizarPreviewParcelas() {
-        const chk = document.getElementById('chk-parcelado');
-        if (!chk || !chk.checked) return;
-
-        const sel = document.getElementById('sel-numero-parcelas');
-        const numParcelas = parseInt(sel.value) || 1;
-
-        let total = 0;
-        document.querySelectorAll('.item-val:not(:disabled)').forEach(input => {
-            const v = parseFloat(input.value) || 0;
-            total += v;
         });
 
-        const valorParcela = total > 0 ? (total / numParcelas).toFixed(2).replace('.', ',') : '0,00';
-        const txt = document.getElementById('texto-resumo-parcelas');
-        if (txt) {
-            txt.innerHTML = `Serão gerados <strong>${numParcelas} lançamentos mensais</strong> de aprox. <strong style="color:var(--amber);">R$ ${valorParcela}</strong> cada nos próximos ${numParcelas} meses.`;
-        }
-    }
-
-    function calcularTotalItens() {
-        let total = 0;
-        document.querySelectorAll('.item-val:not(:disabled)').forEach(input => {
-            const v = parseFloat(input.value) || 0;
-            total += v;
+        dropZone.addEventListener('dragover', function (event) {
+            event.preventDefault();
+            dropZone.style.borderColor = '#c084fc';
         });
-        const el = document.getElementById('soma-itens-total');
-        if (el) {
-            el.textContent = 'R$ ' + total.toFixed(2).replace('.', ',');
-        }
-        atualizarPreviewParcelas();
-    }
 
-    function removerLinhaItem(btn) {
-        const tr = btn.closest('tr');
-        const tbody = document.getElementById('itens-body');
-        if (tbody.querySelectorAll('tr').length > 1) {
-            tr.remove();
-            calcularTotalItens();
-        } else {
-            alert('A nota deve conter pelo menos um item.');
-        }
-    }
+        dropZone.addEventListener('dragleave', function () {
+            dropZone.style.borderColor = 'rgba(192,132,252,0.4)';
+        });
 
-    function adicionarLinhaItem() {
-        const tbody = document.getElementById('itens-body');
-        const firstTr = tbody.querySelector('tr');
-        const newTr = firstTr.cloneNode(true);
+        dropZone.addEventListener('drop', function (event) {
+            event.preventDefault();
 
-        newTr.querySelector('input[name="item_descricao[]"]').value = '';
-        newTr.querySelector('input[name="item_valor[]"]').value = '0.00';
-        newTr.querySelectorAll('input, select').forEach(el => { el.disabled = false; });
-        tbody.appendChild(newTr);
-        calcularTotalItens();
-    }
+            if (event.dataTransfer.files.length > 0) {
+                inputFile.files = event.dataTransfer.files;
+                inputFile.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
 
-    document.addEventListener('DOMContentLoaded', () => {
-        const sel = document.getElementById('sel-tipo-transacao');
-        if (sel) toggleTipoTransacao(sel.value);
-        calcularTotalItens();
-        atualizarPreviewParcelas();
+        formUpload.addEventListener('submit', function (event) {
+            console.log('IA UPLOAD | Iniciando envio.');
+
+            const arquivo = inputFile.files[0];
+
+            if (!arquivo) {
+                event.preventDefault();
+                alert('Selecione uma imagem ou PDF antes de continuar.');
+                return;
+            }
+
+            if (!csrfField || !csrfField.value) {
+                event.preventDefault();
+                alert('Token de segurança ausente. Atualize a página e tente novamente.');
+                return;
+            }
+
+            console.log('IA UPLOAD | Arquivo:', {
+                nome: arquivo.name,
+                tamanho: arquivo.size,
+                tipo: arquivo.type
+            });
+
+            console.log('IA UPLOAD | CSRF presente:', !!csrfField.value);
+
+            submitButton.disabled = true;
+            submitButton.innerHTML =
+                '<span class="spinner-border spinner-border-sm me-2"></span> Processando nota...';
+        });
     });
 </script>
+
 {% endblock %}

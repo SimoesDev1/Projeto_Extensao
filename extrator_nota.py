@@ -27,6 +27,15 @@ _OCR_ENGINE = None
 
 
 def _obter_ocr_engine():
+    """Reaproveita o motor do planilha_produto_service (um unico motor na memoria)."""
+    try:
+        from app.services.planilha_produto_service import _obter_ocr_engine as _compartilhado
+        return _compartilhado()
+    except ImportError:
+        return _obter_ocr_engine_proprio()
+
+
+def _obter_ocr_engine_proprio():
     """Inicializa e retorna o motor RapidOCR (singleton, lazy-loaded)."""
     global _OCR_ENGINE
     if _OCR_ENGINE is None:
@@ -58,7 +67,10 @@ def _imagem_bytes_para_texto_ocr(image_bytes: bytes) -> str:
         img = img.resize((img.width * fator, img.height * fator), Image.LANCZOS)
 
     imagem_np = np.array(img)
-    res, _ = engine(imagem_np)
+    try:
+        res, _ = engine(imagem_np, use_cls=False)
+    except TypeError:
+        res, _ = engine(imagem_np)
 
     if not res:
         return ""

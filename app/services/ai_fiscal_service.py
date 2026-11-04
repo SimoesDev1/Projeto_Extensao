@@ -75,11 +75,22 @@ class AiFiscalService:
 
     @classmethod
     def is_configurado(cls) -> bool:
+        import time as _t
+        agora = _t.time()
+        cache = getattr(cls, "_cfg_cache", None)
+        if cache and agora - cache[0] < 120:
+            return cache[1]
+        ok = cls._verificar_configurado()
+        cls._cfg_cache = (agora, ok)
+        return ok
+
+    @classmethod
+    def _verificar_configurado(cls) -> bool:
         provider = cls.get_provider()
         if provider == "texto":
             return True
         try:
-            response = requests.get(f"{cls.OLLAMA_HOST}/api/tags", timeout=5)
+            response = requests.get(f"{cls.OLLAMA_HOST}/api/tags", timeout=2)
             response.raise_for_status()
 
             nomes = {m.get("name", "") for m in response.json().get("models", [])}
@@ -115,7 +126,10 @@ class AiFiscalService:
         if provider == "texto":
             return cls._processar_com_extrator_texto(file_bytes, mimetype, hoje_str, categorias_existentes)
         elif provider == "ollama":
-            return cls._processar_com_ollama(file_bytes, mimetype, hoje_str, categorias_existentes)
+            if cls.is_configurado():
+                return cls._processar_com_ollama(file_bytes, mimetype, hoje_str, categorias_existentes)
+            logger.warning("Ollama indisponivel. Usando OCR (extrator de texto) como alternativa.")
+            return cls._processar_com_extrator_texto(file_bytes, mimetype, hoje_str, categorias_existentes)
         else:
             logger.warning("Provedor '%s' desconhecido. Utilizando 'texto' como padrão.", provider)
             return cls._processar_com_extrator_texto(file_bytes, mimetype, hoje_str, categorias_existentes)

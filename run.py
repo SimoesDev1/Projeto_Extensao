@@ -16,11 +16,12 @@ def registrar_versoes_ocr():
     logger.info("Python: %s", platform.python_version())
 
     bibliotecas = [
-        "rapidocr-onnxruntime",
-        "onnxruntime",
-        "numpy",
-        "Pillow"
-    ]
+    "rapidocr-onnxruntime",
+    "onnxruntime",
+    "numpy",
+    "opencv-python",
+    "Pillow"
+]
 
     for biblioteca in bibliotecas:
         try:

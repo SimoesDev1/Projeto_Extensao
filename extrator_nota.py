@@ -19,6 +19,7 @@ import logging
 from datetime import datetime
 from typing import Any
 import pdfplumber
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -49,63 +50,211 @@ def _obter_ocr_engine_proprio():
     return _OCR_ENGINE
 
 
+
 def _imagem_bytes_para_texto_ocr(image_bytes: bytes) -> str:
     """
-    Recebe bytes de uma imagem (JPEG, PNG, WEBP) e retorna o texto extraído
-    via RapidOCR, linha por linha, pronto para ser processado pelos regex.
+    Recebe bytes de uma imagem e retorna o texto extraído
+    via RapidOCR, registrando o tempo de cada etapa.
     """
     import numpy as np
+    import os
     from PIL import Image, ImageOps
 
-    engine = _obter_ocr_engine()
+    inicio_total = time.perf_counter()
 
-    # Corrige rotação EXIF e amplia imagens pequenas para melhorar o OCR
-    img = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes))).convert("RGB")
-    import os as _os; _lado = int(_os.getenv("OCR_MAX_LADO", "1600")); img.thumbnail((_lado, _lado))
-    fator = min(3, max(1, round(int(_os.getenv("OCR_ALVO", "1600")) / max(img.size))))
-    if fator > 1:
-        img = img.resize((img.width * fator, img.height * fator), Image.LANCZOS)
+    logger.info(
+        "OCR | Iniciando processamento | Tamanho: %.2f MB",
+        len(image_bytes) / (1024 * 1024)
+    )
 
-    imagem_np = np.array(img)
+    # ETAPA 1: Obter o motor OCR
+    inicio = time.perf_counter()
+
     try:
-        res, _ = engine(imagem_np, use_cls=False)
-    except TypeError:
-        res, _ = engine(imagem_np)
+        engine = _obter_ocr_engine()
+    except Exception:
+        logger.exception("OCR | Erro ao obter/inicializar o motor")
+        raise
+
+    tempo_motor = time.perf_counter() - inicio
+
+    logger.info(
+        "OCR | Motor obtido em %.2f segundos",
+        tempo_motor
+    )
+
+    # ETAPA 2: Abrir e preparar a imagem
+    inicio = time.perf_counter()
+
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as imagem_original:
+            img = ImageOps.exif_transpose(imagem_original).convert("RGB")
+
+        largura_original, altura_original = img.size
+
+        lado_max = int(os.getenv("OCR_MAX_LADO", "1600"))
+        alvo = int(os.getenv("OCR_ALVO", "1600"))
+
+        # Limita o tamanho máximo da imagem
+        img.thumbnail((lado_max, lado_max))
+
+        # Amplia imagens pequenas somente quando necessário
+        fator = min(3, max(1, round(alvo / max(img.size))))
+
+        if fator > 1:
+            img = img.resize(
+                (img.width * fator, img.height * fator),
+                Image.LANCZOS
+            )
+
+        largura_final, altura_final = img.size
+
+        imagem_np = np.array(img)
+
+        logger.info(
+            "OCR | Imagem preparada | Original: %sx%s | Final: %sx%s",
+            largura_original,
+            altura_original,
+            largura_final,
+            altura_final
+        )
+
+    except Exception:
+        logger.exception("OCR | Erro ao preparar a imagem")
+        raise
+
+    tempo_preparo = time.perf_counter() - inicio
+
+    logger.info(
+        "OCR | Preparação concluída em %.2f segundos",
+        tempo_preparo
+    )
+
+    # ETAPA 3: Executar o RapidOCR
+    inicio = time.perf_counter()
+
+    try:
+        logger.info("OCR | Iniciando inferência do RapidOCR")
+
+        try:
+            res, _ = engine(imagem_np, use_cls=False)
+        except TypeError:
+            res, _ = engine(imagem_np)
+
+        tempo_inferencia = time.perf_counter() - inicio
+
+        quantidade = len(res) if res else 0
+
+        logger.info(
+            "OCR | Inferência concluída em %.2f segundos | "
+            "Caixas detectadas: %d",
+            tempo_inferencia,
+            quantidade
+        )
+
+    except Exception:
+        logger.exception("OCR | Erro durante a inferência")
+        raise
 
     if not res:
+        logger.warning("OCR | Nenhum texto detectado")
+
+        logger.info(
+            "OCR | Processamento total: %.2f segundos",
+            time.perf_counter() - inicio_total
+        )
+
         return ""
 
-    # Agrupa caixas de texto por linha (y próximo) e ordena da esquerda para direita
+    # ETAPA 4: Organizar os textos por linha
+    inicio = time.perf_counter()
+
     caixas = []
+
     for box, texto, *_ in res:
         texto = str(texto).strip()
+
         if not texto:
             continue
+
         ys = [p[1] for p in box]
         xs = [p[0] for p in box]
-        caixas.append({"texto": texto, "y": (min(ys) + max(ys)) / 2.0, "x": min(xs), "h": max(ys) - min(ys)})
+
+        caixas.append({
+            "texto": texto,
+            "y": (min(ys) + max(ys)) / 2.0,
+            "x": min(xs),
+            "h": max(ys) - min(ys)
+        })
 
     if not caixas:
+        logger.warning("OCR | Nenhuma caixa de texto utilizável")
+
+        logger.info(
+            "OCR | Processamento total: %.2f segundos",
+            time.perf_counter() - inicio_total
+        )
+
         return ""
 
-    altura_mediana = sorted(c["h"] for c in caixas)[len(caixas) // 2]
+    altura_mediana = sorted(
+        c["h"] for c in caixas
+    )[len(caixas) // 2]
+
     tolerancia = max(4.0, 0.6 * altura_mediana)
 
     caixas.sort(key=lambda c: c["y"])
+
     linhas_agrupadas = []
+
     for c in caixas:
-        if linhas_agrupadas and abs(linhas_agrupadas[-1]["y"] - c["y"]) <= tolerancia:
+        if (
+            linhas_agrupadas
+            and abs(linhas_agrupadas[-1]["y"] - c["y"]) <= tolerancia
+        ):
             linhas_agrupadas[-1]["itens"].append(c)
-            linhas_agrupadas[-1]["y"] += (c["y"] - linhas_agrupadas[-1]["y"]) / len(linhas_agrupadas[-1]["itens"])
+
+            linhas_agrupadas[-1]["y"] += (
+                c["y"] - linhas_agrupadas[-1]["y"]
+            ) / len(linhas_agrupadas[-1]["itens"])
+
         else:
-            linhas_agrupadas.append({"y": c["y"], "itens": [c]})
+            linhas_agrupadas.append({
+                "y": c["y"],
+                "itens": [c]
+            })
 
     linhas_texto = []
+
     for linha in linhas_agrupadas:
-        texto_linha = " ".join(i["texto"] for i in sorted(linha["itens"], key=lambda i: i["x"]))
+        texto_linha = " ".join(
+            i["texto"]
+            for i in sorted(
+                linha["itens"],
+                key=lambda i: i["x"]
+            )
+        )
+
         linhas_texto.append(texto_linha.strip())
 
-    return "\n".join(linhas_texto)
+    texto_final = "\n".join(linhas_texto)
+
+    tempo_organizacao = time.perf_counter() - inicio
+    tempo_total = time.perf_counter() - inicio_total
+
+    logger.info(
+        "OCR | Organização concluída em %.2f segundos",
+        tempo_organizacao
+    )
+
+    logger.info(
+        "OCR | Finalizado | Caracteres: %d | Tempo total: %.2f segundos",
+        len(texto_final),
+        tempo_total
+    )
+
+    return texto_final
+
 
 
 def extrair_dados_imagem_ocr(image_bytes: bytes) -> dict[str, Any]:

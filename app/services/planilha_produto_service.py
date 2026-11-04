@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # Instância preguiçosa do RapidOCR para processar imagens/prints locais
 import threading as _threading
 _OCR_LOCK = _threading.Lock()
+_OCR_INFERENCE_LOCK = _threading.Lock()
 _OCR_ENGINE = None
 
 # Linha de lista de preços lida por OCR. Aceita variações reais do OCR:
@@ -42,6 +43,16 @@ _PRECO_QUALQUER = re.compile(r'(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+[.,]\d{2
 def _obter_ocr_engine():
     with _OCR_LOCK:
         return _criar_ocr_engine()
+
+
+def _executar_ocr(imagem):
+    engine = _obter_ocr_engine()
+
+    with _OCR_INFERENCE_LOCK:
+        try:
+            return engine(imagem, use_cls=False)
+        except TypeError:
+            return engine(imagem)
 
 
 def _criar_ocr_engine():
@@ -397,10 +408,7 @@ class PlanilhaProdutoService:
         except Exception:
             raise ValueError("Não foi possível abrir a imagem enviada. Envie um arquivo PNG, JPG ou WEBP válido.")
 
-        try:
-            res, _ = engine(imagem, use_cls=False)
-        except TypeError:
-            res, _ = engine(imagem)
+        res, _ = _executar_ocr(imagem)
         if not res:
             raise ValueError("Não foi possível detectar texto ou números na imagem enviada. Certifique-se de que a imagem esteja nítida.")
 

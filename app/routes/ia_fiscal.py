@@ -80,7 +80,26 @@ def processar():
         return redirect(url_for('ia_fiscal.upload'))
 
     file_bytes = file.read()
-    if len(file_bytes) > 10 * 1024 * 1024:  # 10 MB max
+
+    # Registra informações do upload sem expor o conteúdo do documento
+    logger.info(
+        "UPLOAD | MIME original: %s | Extensão: %s | Bytes recebidos: %d",
+        file.mimetype,
+        file.filename.rsplit('.', 1)[1].lower(),
+        len(file_bytes)
+    )
+
+    # Impede o processamento de arquivos vazios
+    if not file_bytes:
+        logger.warning("UPLOAD | Arquivo recebido sem conteúdo.")
+        flash('O arquivo enviado está vazio. Selecione novamente a imagem ou PDF.', 'danger')
+        return redirect(url_for('ia_fiscal.upload'))
+
+    if len(file_bytes) > 10 * 1024 * 1024:
+        logger.warning(
+            "UPLOAD | Arquivo excedeu o limite. Tamanho: %d bytes",
+            len(file_bytes)
+        )
         flash('Arquivo muito grande (máximo 10 MB).', 'danger')
         return redirect(url_for('ia_fiscal.upload'))
 
@@ -94,6 +113,7 @@ def processar():
         mimetype = 'image/png'
     elif ext == 'webp':
         mimetype = 'image/webp'
+
 
     # Busca categorias do usuário
     categorias = CategoriaService.listar_todas()

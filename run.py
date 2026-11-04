@@ -4,6 +4,36 @@ from app.models.categoria import Categoria
 
 app = create_app()
 
+# Diagnóstico temporário das dependências do OCR
+def registrar_versoes_ocr():
+    import importlib.metadata
+    import platform
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    logger.info("========== DIAGNOSTICO OCR ==========")
+    logger.info("Python: %s", platform.python_version())
+
+    bibliotecas = [
+        "rapidocr-onnxruntime",
+        "onnxruntime",
+        "numpy",
+        "Pillow"
+    ]
+
+    for biblioteca in bibliotecas:
+        try:
+            versao = importlib.metadata.version(biblioteca)
+            logger.info("%s: %s", biblioteca, versao)
+        except importlib.metadata.PackageNotFoundError:
+            logger.warning("%s: NAO INSTALADO", biblioteca)
+
+    logger.info("=====================================")
+
+
+registrar_versoes_ocr()
+
 def seed_categorias():
     #Insere categorias padrão se o banco estiver vazio
     if Categoria.query.count() == 0:

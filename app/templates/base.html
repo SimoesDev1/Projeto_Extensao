@@ -277,8 +277,20 @@
     </script>
     <script>
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'));
+    window.addEventListener('load', async () => {
+        try {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+
+            for (const registration of registrations) {
+                await registration.unregister();
+            }
+
+            console.log('Service Workers desativados para diagnóstico.');
+        } catch (error) {
+            console.error('Erro ao desativar Service Worker:', error);
         }
+    });
+}
     </script>
     {% if session.get('id_usuario') %}{% include '_chat_widget.html' %}{% endif %}
     {% block scripts %}{% endblock %}

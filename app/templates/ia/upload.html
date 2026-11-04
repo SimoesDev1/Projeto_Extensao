@@ -30,7 +30,13 @@
     </div>
     <div class="form-card-body">
         <form method="POST" action="{{ url_for('ia_fiscal.processar') }}" enctype="multipart/form-data" data-loading id="form-upload-ia">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input
+    type="hidden"
+    name="csrf_token"
+    id="csrf-token-field"
+    value="{{ csrf_token() }}"
+    autocomplete="off"
+>
 
             <!-- ZONA DE DRAG & DROP -->
             <div id="drop-zone" class="drop-zone" style="border: 2px dashed rgba(192,132,252,0.4); border-radius: var(--radius-md); padding: 48px 24px; text-align: center; background: rgba(192,132,252,0.03); cursor: pointer; transition: var(--transition);">
@@ -112,6 +118,27 @@
     const inputFile = document.getElementById('input-file');
     const fileInfo = document.getElementById('file-info');
     const fileName = document.getElementById('file-name');
+
+    const formUpload = document.getElementById('form-upload-ia');
+const csrfField = document.getElementById('csrf-token-field');
+
+formUpload.addEventListener('submit', function (event) {
+    const formData = new FormData(this);
+
+    console.log('Diagnóstico CSRF:', {
+        campoExiste: !!csrfField,
+        tokenPreenchido: !!csrfField?.value,
+        campoDentroDoFormulario: csrfField
+            ? this.contains(csrfField)
+            : false,
+        tokenIncluidoNoFormData: formData.has('csrf_token')
+    });
+
+    if (!csrfField || !csrfField.value || !formData.has('csrf_token')) {
+        event.preventDefault();
+        alert('Não foi possível validar o formulário. Atualize a página e tente novamente.');
+    }
+});
 
     inputFile.addEventListener('change', () => {
         if (inputFile.files.length > 0) {

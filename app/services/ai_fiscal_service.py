@@ -146,25 +146,73 @@ class AiFiscalService:
         Processa documentos PDF diretamente via extrator_nota.py sem IA/GPU.
         Se falhar ou não conseguir identificar valores, retorna estrutura vazia para preenchimento manual.
         """
+        import time as _time
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutTimeout
+
+        TIMEOUT_S = int(os.getenv("EXTRACAO_TIMEOUT", "120"))  # 2 min padrão
+        _t0 = _time.perf_counter()
+
         try:
             import extrator_nota
 
-            if mimetype.endswith("pdf"):
-                # PDF: extração direta via pdfplumber
-                dados_extrator = extrator_nota.extrair_dados_pdf(file_bytes)
-            elif mimetype.startswith("image/") and os.getenv("OCR_IMAGEM", "1") == "1":
-                # Imagem: OCR via RapidOCR (CPU-only, sem GPU)
-                logger.info("Arquivo de imagem recebido (%s). Usando OCR para extração.", mimetype)
-                dados_extrator = extrator_nota.extrair_dados_imagem_ocr(file_bytes)
-            else:
-                logger.info("Tipo de arquivo não suportado para extração automática: %s", mimetype)
+            logger.info(
+                "EXTRATOR | início | MIME: %s | Bytes: %d | Timeout: %ds",
+                mimetype, len(file_bytes), TIMEOUT_S
+            )
+
+            def _chamar_extrator():
+                if mimetype.endswith("pdf"):
+                    return extrator_nota.extrair_dados_pdf(file_bytes)
+                elif mimetype.startswith("image/") and os.getenv("OCR_IMAGEM", "1") == "1":
+                    logger.info("EXTRATOR | imagem recebida (%s). Iniciando OCR.", mimetype)
+                    return extrator_nota.extrair_dados_imagem_ocr(file_bytes)
+                return None  # tipo não suportado — sinaliza abaixo
+
+            if not (mimetype.endswith("pdf") or
+                    (mimetype.startswith("image/") and os.getenv("OCR_IMAGEM", "1") == "1")):
+                logger.info("EXTRATOR | tipo não suportado: %s", mimetype)
                 return cls._gerar_resultado_manual(
                     f"Formato '{mimetype}' não suportado pelo extrator. Preencha os campos manualmente.",
                     hoje_str,
                 )
 
+            # Roda em thread separada para permitir timeout sem bloquear o worker
+            with ThreadPoolExecutor(max_workers=1) as _ex:
+                _fut = _ex.submit(_chamar_extrator)
+                try:
+                    dados_extrator = _fut.result(timeout=TIMEOUT_S)
+                except _FutTimeout:
+                    logger.error(
+                        "EXTRATOR | TIMEOUT após %ds | MIME: %s | Bytes: %d",
+                        TIMEOUT_S, mimetype, len(file_bytes)
+                    )
+                    return cls._gerar_resultado_manual(
+                        f"Tempo limite de extração excedido ({TIMEOUT_S}s). Preencha os dados manualmente.",
+                        hoje_str,
+                    )
+
+            if dados_extrator is None:
+                return cls._gerar_resultado_manual(
+                    f"Formato '{mimetype}' não suportado pelo extrator. Preencha os campos manualmente.",
+                    hoje_str,
+                )
+
+            logger.info(
+                "EXTRATOR | extração concluída em %.1fs | fornecedor=%r | valor=%.2f | parcelas=%d",
+                _time.perf_counter() - _t0,
+                dados_extrator.get("fornecedor", ""),
+                float(dados_extrator.get("valor_total") or 0),
+                int(dados_extrator.get("parcelas") or 1),
+            )
+
             # Converte o retorno do extrator_nota para o formato esperado pela tela de revisão
             dados_convertidos = cls._converter_extrator_para_revisao(dados_extrator, hoje_str, categorias_existentes)
+
+            logger.info(
+                "EXTRATOR | conversão concluída | forma_pagamento=%r | total=%.2f",
+                dados_convertidos.get("forma_pagamento"),
+                dados_convertidos.get("valor_total", 0),
+            )
 
             if dados_convertidos["valor_total"] == 0.0 and not dados_convertidos["itens"]:
                 return cls._gerar_resultado_manual(
@@ -178,7 +226,10 @@ class AiFiscalService:
 
         except Exception as e:
             # Loga com traceback completo, sem engolir exceções
-            logger.exception("Falha na extração de dados do documento via extrator_nota: %s", e)
+            logger.exception(
+                "EXTRATOR | ERRO após %.1fs | MIME: %s | %s",
+                _time.perf_counter() - _t0, mimetype, e
+            )
             return cls._gerar_resultado_manual(
                 f"Erro na extração automática ({e}). Por favor, preencha os dados manualmente.",
                 hoje_str,
@@ -201,18 +252,23 @@ class AiFiscalService:
         if not data_str:
             data_str = hoje_str
 
-        fp = str(d.get("forma_pagamento") or "Pix").strip()
+        fp = str(d.get("forma_pagamento") or "").strip()
         if fp not in cls.FORMAS_PAGAMENTO:
-            if "CRÉDITO" in fp.upper() or "CREDITO" in fp.upper():
+            _fpu = fp.upper()
+            if re.search(r"CART[AÃ]O\s+(?:DE\s+)?CR[EÉ]DITO|CR[EÉ]DITO.*\d+\s*[xX]|CREDITO\s+PARC", _fpu):
                 fp = "Cartão de Crédito"
-            elif "DÉBITO" in fp.upper() or "DEBITO" in fp.upper():
+            elif re.search(r"CART[AÃ]O\s+(?:DE\s+)?D[EÉ]BITO|COMPRA\s+D[EÉ]BITO", _fpu):
                 fp = "Cartão de Débito"
-            elif "PIX" in fp.upper():
+            elif re.search(r"\bPIX\b|CHAVE\s+PIX", _fpu):
                 fp = "Pix"
-            elif "DINHEIRO" in fp.upper():
+            elif re.search(r"\bDINHEIRO\b|\bESP[EÉ]CIE\b", _fpu):
                 fp = "Dinheiro"
-            else:
+            elif re.search(r"\bTRANSFER[EÊ]NCIA\b|\bTED\b|\bDOC\b|\bTEF\b", _fpu):
+                fp = "Transferência"
+            elif re.search(r"\bBOLETO\b", _fpu):
                 fp = "Pix"
+            else:
+                fp = ""  # Deixa vazio; usuário preenche na revisão
 
         parcelas = int(d.get("parcelas") or 1)
         is_parcelado = parcelas > 1

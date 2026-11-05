@@ -273,14 +273,19 @@ def extrair_dados_imagem_ocr(image_bytes: bytes) -> dict[str, Any]:
 
     Retorna o mesmo formato de dicionário que extrair_dados_pdf.
     """
+    _t0_ocr_fn = time.perf_counter()
+    logger.info(
+        "EXTRATOR | extrair_dados_imagem_ocr | início | %d bytes",
+        len(image_bytes)
+    )
 
     texto_completo = _imagem_bytes_para_texto_ocr(image_bytes)
 
     if not texto_completo.strip():
         logger.warning(
-            "OCR não detectou texto utilizável na imagem."
+            "EXTRATOR | extrair_dados_imagem_ocr | OCR sem texto | %.1fs",
+            time.perf_counter() - _t0_ocr_fn
         )
-
         return {
             "fornecedor": "",
             "data": "",
@@ -291,12 +296,18 @@ def extrair_dados_imagem_ocr(image_bytes: bytes) -> dict[str, Any]:
         }
 
     logger.info(
-        "OCR extraiu %d caracteres da imagem.",
-        len(texto_completo)
+        "EXTRATOR | extrair_dados_imagem_ocr | OCR concluído | %d chars | %.1fs",
+        len(texto_completo), time.perf_counter() - _t0_ocr_fn
     )
 
     # Reutiliza o pipeline de regex
-    return _extrair_de_texto(texto_completo)
+    resultado = _extrair_de_texto(texto_completo)
+    logger.info(
+        "EXTRATOR | extrair_dados_imagem_ocr | fim | total=%.2f | %.1fs",
+        float(resultado.get("valor_total") or 0),
+        time.perf_counter() - _t0_ocr_fn,
+    )
+    return resultado
 
 
 # ============================================================
@@ -436,19 +447,50 @@ def _extrair_de_texto(
             fornecedor = m_emit.group(1).strip()
 
         else:
-            # Fallback: pega a primeira linha informativa
-            # que não seja cabeçalho genérico
+            # Fallback aprimorado: procura padrões estruturados antes de
+            # usar a primeira linha genérica.
 
-            for l in linhas[:5]:
+            # Tenta "EMPRESA:", "LOJA:", "ESTABELECIMENTO:" no texto
+            m_extra = re.search(
+                r"(?:EMPRESA|LOJA|ESTABELECIMENTO|CEDENTE|SACADO)[:\s]+([^\n\r,]{3,60})",
+                texto_completo,
+                re.IGNORECASE
+            )
+            if m_extra:
+                fornecedor = m_extra.group(1).strip()
 
-                if not re.search(
-                    r"INFORMATIVO|DANFE|DOCUMENTO|NOTA FISCAL|RECIBO|COMPROVANTE|PREFEITURA",
-                    l,
+            else:
+                # Procura a linha imediatamente antes de um CNPJ
+                # (nome da empresa quase sempre antecede o CNPJ)
+                cnpj_match = re.search(
+                    r"(\d{2}\.?\d{3}\.?\d{3}/\d{4}-\d{2})",
+                    texto_completo
+                )
+                if cnpj_match:
+                    pos = cnpj_match.start()
+                    trecho_antes = texto_completo[:pos]
+                    linhas_antes = [l.strip() for l in trecho_antes.splitlines() if l.strip()]
+                    for cand in reversed(linhas_antes[-4:]):
+                        # ignora linhas que são só números/CNPJ/endereço
+                        if not re.search(
+                            r"^\d|RUA|AV\.|AVENIDA|R\.|CEP|FONE|TEL|FAX",
+                            cand, re.IGNORECASE
+                        ) and len(cand) > 3:
+                            fornecedor = cand
+                            break
+
+            if not fornecedor:
+                # Último recurso: primeira linha informativa entre as 7 primeiras
+                _skip = re.compile(
+                    r"INFORMATIVO|DANFE|DOCUMENTO|NOTA FISCAL|RECIBO"
+                    r"|COMPROVANTE|PREFEITURA|SECRETARIA|MUNICIPIO|FATURA"
+                    r"|DUPLICATA|CUPOM|TRIBUT",
                     re.IGNORECASE
-                ) and len(l) > 3:
-
-                    fornecedor = l
-                    break
+                )
+                for l in linhas[:7]:
+                    if not _skip.search(l) and len(l) > 3:
+                        fornecedor = l
+                        break
 
     # ========================================================
     # 2. IDENTIFICAR DATA
@@ -484,69 +526,123 @@ def _extrair_de_texto(
     # 3. IDENTIFICAR FORMA DE PAGAMENTO E PARCELAS
     # ========================================================
 
-    forma_pagamento = "Boleto / Pix"
+    # ── Forma de pagamento: busca contextual (evita falso-positivo) ──────────
+    forma_pagamento = ""
     parcelas = 1
 
     t_upper = texto_completo.upper()
 
-    if "PIX" in t_upper:
+    # Prioridade 1 — PIX (palavra isolada ou contexto de pagamento)
+    if re.search(
+        r"(?:PAGAMENTO\s+(?:VIA\s+)?PIX|CHAVE\s+PIX|\bPIX\b)",
+        t_upper
+    ):
         forma_pagamento = "Pix"
 
-    elif (
-        "CARTAO DE CREDITO" in t_upper
-        or "CARTÃO DE CRÉDITO" in t_upper
-        or "CRÉDITO" in t_upper
+    # Prioridade 2 — Cartão de Crédito (exige palavra CART + CRÉD juntas,
+    #                ou parcelamento explícito em cartão)
+    elif re.search(
+        r"CART[AÃ]O\s+(?:DE\s+)?CR[EÉ]DITO"
+        r"|CR[EÉ]DITO\s+EM\s+\d+\s*[xX]"
+        r"|COMPRA\s+CR[EÉ]DITO"
+        r"|CREDITO\s+PARCELADO",
+        t_upper
     ):
         forma_pagamento = "Cartão de Crédito"
 
-    elif (
-        "CARTAO DE DEBITO" in t_upper
-        or "CARTÃO DE DÉBITO" in t_upper
-        or "DÉBITO" in t_upper
+    # Prioridade 3 — Cartão de Débito
+    elif re.search(
+        r"CART[AÃ]O\s+(?:DE\s+)?D[EÉ]BITO"
+        r"|D[EÉ]BITO\s+(?:EM\s+CONTA|AUTOM[AÁ]TICO|CONTA)"
+        r"|COMPRA\s+D[EÉ]BITO",
+        t_upper
     ):
         forma_pagamento = "Cartão de Débito"
 
-    elif "DINHEIRO" in t_upper:
+    # Prioridade 4 — Dinheiro / espécie
+    elif re.search(r"\bDINHEIRO\b|\bESP[EÉ]CIE\b|PAGAMENTO\s+EM\s+DINHEIRO", t_upper):
         forma_pagamento = "Dinheiro"
 
-    elif (
-        "TRANSFERENCIA" in t_upper
-        or "TRANSFERÊNCIA" in t_upper
-        or "TED" in t_upper
+    # Prioridade 5 — Transferência (TED/DOC como palavra isolada)
+    elif re.search(
+        r"\bTRANSFER[EÊ]NCIA\b|\bTED\b|\bDOC\b|\bTEF\b",
+        t_upper
     ):
         forma_pagamento = "Transferência"
 
-    # Detecção de parcelas:
-    # Exemplo: 3x, 3 parcelas, 1/4
+    # Prioridade 6 — Boleto → mapeado para "Pix" (valor válido mais próximo)
+    elif re.search(r"\bBOLETO\b|LINHA\s+DIGIT[AÁ]VEL|C[OÓ]DIGO\s+DE\s+BARRAS", t_upper):
+        forma_pagamento = "Pix"
 
-    m_parc = re.search(
-        r"(\d{1,2})\s*X\b|PARCELA\s*(\d{1,2})|PARC\.?\s*(\d{1,2})[/de\s]+(\d{1,2})",
+    # Sem contexto suficiente → deixa vazio (usuário preenche)
+
+    logger.debug("EXTRATOR | forma_pagamento detectada: '%s'", forma_pagamento)
+
+    # ── Parcelas: identifica TOTAL (não parcela atual) ────────────────────
+    # Ordem de tentativa (mais específico → menos específico):
+    #   1. "Parcela N de M" ou "Parcela N/M" → total = M
+    #   2. "parc. N/M"  ou  "PARC N/M"      → total = M
+    #   3. "N/M" precedido por "PARCELA"     → total = M
+    #   4. "em Nx" / "Nx"                   → total = N
+    #   5. "N parcelas"                     → total = N
+
+    _parc_total: int | None = None
+
+    # Padrão 1 — "Parcela 1 de 3" / "Parcela 1/3" / "1ª parcela de 3"
+    m = re.search(
+        r"PARCELA\s+\d{1,2}\s+DE\s+(\d{1,2})"
+        r"|PARCELA\s+\d{1,2}/(\d{1,2})"
+        r"|\d{1,2}[ªº]\.?\s*PARCELA\s+DE\s+(\d{1,2})",
         t_upper
     )
+    if m:
+        g = next((x for x in m.groups() if x), None)
+        if g:
+            _parc_total = int(g)
 
-    if m_parc:
+    # Padrão 2 — "PARC. 01/03" / "PARC 1/3"
+    if _parc_total is None:
+        m = re.search(r"PARC\.?\s+\d{1,2}/(\d{1,2})", t_upper)
+        if m:
+            _parc_total = int(m.group(1))
 
-        grupos = [
-            g for g in m_parc.groups()
-            if g
-        ]
+    # Padrão 3 — "01/03" precedido de PARCELA na mesma linha
+    if _parc_total is None:
+        for linha in linhas:
+            lu = linha.upper()
+            if "PARCELA" in lu or "PARC" in lu:
+                m = re.search(r"\b(\d{1,2})/(\d{1,2})\b", lu)
+                if m:
+                    num_atual, num_total = int(m.group(1)), int(m.group(2))
+                    if num_total > num_atual and 2 <= num_total <= 48:
+                        _parc_total = num_total
+                        break
 
-        if grupos:
+    # Padrão 4 — "em 3x", "3x", "3 x", "(3x)"
+    if _parc_total is None:
+        m = re.search(r"(?:EM\s+)?(\d{1,2})\s*[xX]\b", t_upper)
+        if m:
+            n = int(m.group(1))
+            if 2 <= n <= 48:
+                _parc_total = n
 
-            try:
-                num = int(grupos[-1])
+    # Padrão 5 — "em 3 parcelas" / "3 parcelas"
+    if _parc_total is None:
+        m = re.search(r"(?:EM\s+)?(\d{1,2})\s+PARCELA", t_upper)
+        if m:
+            n = int(m.group(1))
+            if 2 <= n <= 48:
+                _parc_total = n
 
-                if 1 <= num <= 48:
-                    parcelas = num
+    if _parc_total and 2 <= _parc_total <= 48:
+        parcelas = _parc_total
+        logger.debug("EXTRATOR | parcelas detectadas: %d", parcelas)
 
-                    if (
-                        forma_pagamento != "Cartão de Crédito"
-                        and "CART" in t_upper
-                    ):
-                        forma_pagamento = "Cartão de Crédito"
-
-            except (ValueError, TypeError):
-                pass
+        # Se há parcelas e ainda não identificamos a forma, verifica cartão
+        if not forma_pagamento and "CART" in t_upper:
+            forma_pagamento = "Cartão de Crédito"
+        elif forma_pagamento == "" and parcelas > 1:
+            forma_pagamento = "Cartão de Crédito"  # parcelamento → crédito por padrão
 
     # ========================================================
     # 4. IDENTIFICAR VALOR TOTAL

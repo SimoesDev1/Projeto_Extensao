@@ -176,20 +176,33 @@ class AiFiscalService:
                     hoje_str,
                 )
 
-            # Roda em thread separada para permitir timeout sem bloquear o worker
-            with ThreadPoolExecutor(max_workers=1) as _ex:
-                _fut = _ex.submit(_chamar_extrator)
-                try:
-                    dados_extrator = _fut.result(timeout=TIMEOUT_S)
-                except _FutTimeout:
-                    logger.error(
-                        "EXTRATOR | TIMEOUT após %ds | MIME: %s | Bytes: %d",
-                        TIMEOUT_S, mimetype, len(file_bytes)
-                    )
-                    return cls._gerar_resultado_manual(
-                        f"Tempo limite de extração excedido ({TIMEOUT_S}s). Preencha os dados manualmente.",
-                        hoje_str,
-                    )
+            
+            # Executa em thread separada para limitar a espera do worker.
+            executor = ThreadPoolExecutor(max_workers=1)
+            futuro = executor.submit(_chamar_extrator)
+
+            try:
+                dados_extrator = futuro.result(timeout=TIMEOUT_S)
+
+            except _FutTimeout:
+                logger.error(
+                    "EXTRATOR | TIMEOUT após %ds | MIME: %s | Bytes: %d",
+                    TIMEOUT_S,
+                    mimetype,
+                    len(file_bytes)
+                )
+
+                futuro.cancel()
+
+                return cls._gerar_resultado_manual(
+                    f"Tempo limite de extração excedido ({TIMEOUT_S}s). "
+                    "Preencha os dados manualmente.",
+                    hoje_str,
+                )
+
+            finally:
+                # Não aguarda uma tarefa que ultrapassou o limite.
+                executor.shutdown(wait=False, cancel_futures=True)
 
             if dados_extrator is None:
                 return cls._gerar_resultado_manual(
@@ -272,7 +285,8 @@ class AiFiscalService:
 
         parcelas = int(d.get("parcelas") or 1)
         is_parcelado = parcelas > 1
-        valor_total = round(float(d.get("valor_total") or 0.0), 2)
+        valor_total = round(
+        cls._para_float(d.get("valor_total")), 2)
         valor_parcela = round(valor_total / parcelas, 2) if is_parcelado and parcelas > 0 else 0.0
 
         itens_in = d.get("itens") or []
@@ -282,7 +296,10 @@ class AiFiscalService:
         for item in itens_in:
             if isinstance(item, dict):
                 desc = str(item.get("descricao") or "").strip()
-                val = round(float(item.get("valor") or 0.0), 2)
+                val = round(
+    cls._para_float(item.get("valor")),
+    2
+)
                 cat = str(item.get("categoria_sugerida") or "").strip()
                 if not cat:
                     cat = cat_padrao
@@ -584,39 +601,89 @@ Não invente dados que não estejam no documento."""
 
         return hoje_str
 
+
     @classmethod
-    def _detectar_parcelamento_texto(cls, texto: str) -> tuple[bool, int, float]:
-        """Detecta menções a parcelamento no texto ou descrição."""
+    def _detectar_parcelamento_texto(
+        cls,
+        texto: str
+    ) -> tuple[bool, int, float]:
+        """Detecta parcelamentos em textos de comprovantes."""
+
         if not texto:
             return False, 1, 0.0
 
-        # Padrões comuns em comprovantes brasileiros:
-        # Ex: "3x de R$ 50,00", "3x de 50.00", "3X 50,00"
-        m = re.search(r'(\d{1,2})\s*[xX]\s*(?:de\s*)?R?\$?\s*([\d\.,]+)', texto)
+        texto = texto.strip()
+
+        # Exemplo: PARC. 1/6, PARCELA 1/6, 01/06
+        padrao_fracao = (
+            r"(?:parc(?:ela|elas)?\.?\s*)?"
+            r"\d{1,2}\s*/\s*(\d{1,2})"
+        )
+
+        m = re.search(padrao_fracao, texto, re.IGNORECASE)
+
         if m:
             num = int(m.group(1))
-            val_str = m.group(2).replace('.', '').replace(',', '.') if ',' in m.group(2) else m.group(2)
-            try:
-                val = float(val_str)
-            except ValueError:
-                val = 0.0
-            if 1 < num <= 36:
-                return True, num, val
 
-        # "parcelas: 3", "parcelado em 3x", "parc 1/6"
-        m2 = re.search(r'(?:parcel(?:as?|ado\s*em)|parc\.?)\s*:?\s*(\d{1,2})', texto, re.IGNORECASE)
-        if m2:
-            num = int(m2.group(1))
-            if 1 < num <= 36:
+            if 2 <= num <= 36:
                 return True, num, 0.0
 
-        m3 = re.search(r'(\d{1,2})\s*parcelas', texto, re.IGNORECASE)
-        if m3:
-            num = int(m3.group(1))
-            if 1 < num <= 36:
+        # Exemplo: 3x de R$ 50,00
+        m = re.search(
+            r"(\d{1,2})\s*[xX]\s*(?:de\s*)?R?\$?\s*([\d.,]+)",
+            texto
+        )
+
+        if m:
+            num = int(m.group(1))
+
+            if 2 <= num <= 36:
+                val_str = m.group(2)
+
+                if "," in val_str and "." in val_str:
+                    if val_str.rfind(",") > val_str.rfind("."):
+                        val_str = val_str.replace(".", "").replace(",", ".")
+                    else:
+                        val_str = val_str.replace(",", "")
+                elif "," in val_str:
+                    val_str = val_str.replace(",", ".")
+
+                try:
+                    valor = float(val_str)
+                except ValueError:
+                    valor = 0.0
+
+                return True, num, valor
+
+        # Exemplo: parcelado em 6, parcelas: 6, parc. 6
+        m = re.search(
+            r"(?:parcel(?:as?|ado\s*em)|parc\.?)"
+            r"\s*:?\s*(\d{1,2})(?!\s*/)",
+            texto,
+            re.IGNORECASE
+        )
+
+        if m:
+            num = int(m.group(1))
+
+            if 2 <= num <= 36:
+                return True, num, 0.0
+
+        # Exemplo: 6 parcelas
+        m = re.search(
+            r"(\d{1,2})\s*parcelas",
+            texto,
+            re.IGNORECASE
+        )
+
+        if m:
+            num = int(m.group(1))
+
+            if 2 <= num <= 36:
                 return True, num, 0.0
 
         return False, 1, 0.0
+
 
     @classmethod
     def _normalizar_resultado(cls, dados: dict[str, Any], hoje_str: str) -> dict[str, Any]:
@@ -652,9 +719,30 @@ Não invente dados que não estejam no documento."""
         observacoes = cls._para_texto(dados.get("observacoes"))
 
         # Extração de dados de parcelamento
-        is_parcelado = bool(dados.get("is_parcelado", False))
-        numero_parcelas = int(cls._para_float(dados.get("numero_parcelas") or 1))
-        valor_parcela = round(cls._para_float(dados.get("valor_parcela")), 2)
+        
+        # Converte booleanos sem interpretar a string "false" como True.
+        valor_booleano = dados.get("is_parcelado", False)
+
+        if isinstance(valor_booleano, bool):
+            is_parcelado = valor_booleano
+        elif isinstance(valor_booleano, str):
+            is_parcelado = valor_booleano.strip().lower() in (
+                "true", "1", "sim", "yes"
+            )
+        else:
+            is_parcelado = valor_booleano == 1
+
+        numero_parcelas = int(
+            cls._para_float(dados.get("numero_parcelas") or 1)
+        )
+
+        numero_parcelas = max(1, min(numero_parcelas, 36))
+
+        valor_parcela = round(
+            cls._para_float(dados.get("valor_parcela")),
+            2
+        )
+
 
         # Se a IA não sinalizou no schema mas o texto tem evidência de parcelamento
         if not is_parcelado or numero_parcelas <= 1:

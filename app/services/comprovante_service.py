@@ -1,176 +1,241 @@
+
 """
 Serviço auxiliar para gerenciamento e otimização de arquivos de comprovantes.
-- Comprime imagens (Pillow) convertendo para JPEG otimizado ou redimensionando se excessivamente grandes
-- Remove arquivos físicos associados a comprovantes ao excluir despesas ou receitas
-- Remove arquivos temporários de preview/IA
+
+- Comprime imagens e converte para JPEG otimizado.
+- Redimensiona imagens excessivamente grandes.
+- Remove arquivos físicos sem apagar comprovantes ainda utilizados.
+- Promove arquivos temporários para a pasta permanente.
 """
-import os
-import uuid
+
 import logging
+import os
+import shutil
+import uuid
+
 from PIL import Image, ImageOps
 from flask import current_app
 
 logger = logging.getLogger(__name__)
 
-EXTENSOES_PERMITIDAS = {'png', 'jpg', 'jpeg', 'webp', 'pdf'}
+EXTENSOES_PERMITIDAS = {"png", "jpg", "jpeg", "webp", "pdf"}
 LADO_MAXIMO = 1600
 QUALIDADE_JPEG = 80
 
 
 def obter_pasta_comprovantes() -> str:
-    pasta = current_app.config.get('UPLOAD_COMPROVANTES_DIR')
+    pasta = current_app.config.get("UPLOAD_COMPROVANTES_DIR")
+
     if not pasta:
-        base_dir = current_app.config.get('BASE_DIR', os.getcwd())
-        pasta = os.path.join(base_dir, 'uploads', 'comprovantes')
+        base_dir = current_app.config.get("BASE_DIR", os.getcwd())
+        pasta = os.path.join(base_dir, "uploads", "comprovantes")
+
     os.makedirs(pasta, exist_ok=True)
     return pasta
 
 
+def _converter_para_rgb(img: Image.Image) -> Image.Image:
+    """Converte imagens com transparência para RGB com fundo branco."""
+    if img.mode in ("RGBA", "LA"):
+        imagem_rgb = Image.new("RGB", img.size, (255, 255, 255))
+        imagem_rgb.paste(img, mask=img.getchannel("A"))
+        return imagem_rgb
+
+    if img.mode == "P":
+        imagem_rgba = img.convert("RGBA")
+        imagem_rgb = Image.new("RGB", img.size, (255, 255, 255))
+        imagem_rgb.paste(imagem_rgba, mask=imagem_rgba.getchannel("A"))
+        return imagem_rgb
+
+    if img.mode != "RGB":
+        return img.convert("RGB")
+
+    return img
+
+
+def _otimizar_imagem(img: Image.Image) -> Image.Image:
+    img = ImageOps.exif_transpose(img)
+    img = _converter_para_rgb(img)
+
+    largura, altura = img.size
+    maior_lado = max(largura, altura)
+
+    if maior_lado > LADO_MAXIMO:
+        fator = LADO_MAXIMO / float(maior_lado)
+        novo_tamanho = (
+            max(1, int(largura * fator)),
+            max(1, int(altura * fator))
+        )
+        img = img.resize(novo_tamanho, Image.Resampling.LANCZOS)
+
+    return img
+
+
 def salvar_e_otimizar_comprovante(file_storage) -> str | None:
-    """
-    Salva o arquivo recebido via request.files de forma otimizada.
-    Se for imagem, ajusta rotação EXIF, redimensiona se maior que 1600px e comprime com qualidade balanceada.
-    Se for PDF, salva diretamente.
-    Retorna o nome do arquivo gerado (ex: uuid.jpeg) ou None se inválido.
-    """
+    """Salva um arquivo recebido pelo Flask de forma otimizada."""
     if not file_storage or not file_storage.filename:
         return None
 
     nome_orig = file_storage.filename
-    ext = nome_orig.rsplit('.', 1)[-1].lower() if '.' in nome_orig else ''
+    ext = nome_orig.rsplit(".", 1)[-1].lower() if "." in nome_orig else ""
+
     if ext not in EXTENSOES_PERMITIDAS:
         return None
 
     pasta_destino = obter_pasta_comprovantes()
     token = str(uuid.uuid4())
 
-    # Se for PDF, grava direto sem alteração
-    if ext == 'pdf':
+    if ext == "pdf":
         nome_final = f"{token}.pdf"
         caminho_final = os.path.join(pasta_destino, nome_final)
-        file_storage.save(caminho_final)
-        return nome_final
 
-    # Se for imagem, otimiza com Pillow
+        try:
+            file_storage.save(caminho_final)
+            return nome_final
+        except Exception:
+            logger.exception("Erro ao salvar comprovante PDF.")
+            return None
+
     try:
-        img = Image.open(file_storage)
-        # Respeita orientação EXIF (fotos de celular)
-        img = ImageOps.exif_transpose(img)
+        file_storage.stream.seek(0)
 
-        # Converte RGBA para RGB se salvar em JPEG
-        if img.mode in ('RGBA', 'LA', 'P'):
-            rgb_img = Image.new('RGB', img.size, (255, 255, 255))
-            rgb_img.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-            img = rgb_img
-        elif img.mode != 'RGB':
-            img = img.convert('RGB')
+        with Image.open(file_storage.stream) as imagem:
+            img = _otimizar_imagem(imagem)
+            nome_final = f"{token}.jpeg"
+            caminho_final = os.path.join(pasta_destino, nome_final)
 
-        # Redimensiona mantendo proporção caso seja enorme
-        w, h = img.size
-        if max(w, h) > LADO_MAXIMO:
-            fator = LADO_MAXIMO / float(max(w, h))
-            novo_tamanho = (int(w * fator), int(h * fator))
-            img = img.resize(novo_tamanho, Image.Resampling.LANCZOS)
+            img.save(
+                caminho_final,
+                format="JPEG",
+                optimize=True,
+                quality=QUALIDADE_JPEG
+            )
 
-        nome_final = f"{token}.jpeg"
-        caminho_final = os.path.join(pasta_destino, nome_final)
-        img.save(caminho_final, format='JPEG', optimize=True, quality=QUALIDADE_JPEG)
-        logger.info(f"Comprovante otimizado salvo: {nome_final}")
-        return nome_final
-    except Exception as e:
-        logger.warning(f"Falha ao otimizar imagem com Pillow ({e}). Salvando arquivo original.")
-        # Fallback para salvar arquivo bruto
-        file_storage.seek(0)
-        nome_final = f"{token}.{ext}"
-        caminho_final = os.path.join(pasta_destino, nome_final)
-        file_storage.save(caminho_final)
+        logger.info("Comprovante otimizado salvo: %s", nome_final)
         return nome_final
 
+    except Exception:
+        logger.exception("Falha ao otimizar imagem. Tentando salvar original.")
 
-def promover_temporario_para_comprovante(caminho_origem: str, ext: str) -> str | None:
-    """
-    Copia e otimiza um arquivo temporário (ex: de tmp_ia) para a pasta permanente de comprovantes.
-    """
-    if not os.path.isfile(caminho_origem):
+        try:
+            file_storage.stream.seek(0)
+            nome_final = f"{token}.{ext}"
+            caminho_final = os.path.join(pasta_destino, nome_final)
+            file_storage.save(caminho_final)
+            return nome_final
+        except Exception:
+            logger.exception("Não foi possível salvar o comprovante.")
+            return None
+
+
+def promover_temporario_para_comprovante(
+    caminho_origem: str,
+    ext: str
+) -> str | None:
+    """Copia e otimiza um arquivo temporário para a pasta permanente."""
+
+    if not caminho_origem or not os.path.isfile(caminho_origem):
+        return None
+
+    ext = (ext or "").lower().replace(".", "")
+
+    if ext not in EXTENSOES_PERMITIDAS:
+        logger.warning("Extensão não permitida na promoção: %s", ext)
         return None
 
     pasta_destino = obter_pasta_comprovantes()
     token = str(uuid.uuid4())
-    ext = ext.lower().replace('.', '')
 
-    if ext == 'pdf':
+    if ext == "pdf":
         nome_final = f"{token}.pdf"
         caminho_final = os.path.join(pasta_destino, nome_final)
+
         try:
-            import shutil
             shutil.copy2(caminho_origem, caminho_final)
             return nome_final
-        except Exception as e:
-            logger.error(f"Erro ao copiar PDF temporário: {e}")
+        except Exception:
+            logger.exception("Erro ao copiar PDF temporário.")
             return None
 
     try:
-        with Image.open(caminho_origem) as img:
-            img = ImageOps.exif_transpose(img)
-            if img.mode in ('RGBA', 'LA', 'P'):
-                rgb_img = Image.new('RGB', img.size, (255, 255, 255))
-                rgb_img.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-                img = rgb_img
-            elif img.mode != 'RGB':
-                img = img.convert('RGB')
-
-            w, h = img.size
-            if max(w, h) > LADO_MAXIMO:
-                fator = LADO_MAXIMO / float(max(w, h))
-                img = img.resize((int(w * fator), int(h * fator)), Image.Resampling.LANCZOS)
+        with Image.open(caminho_origem) as imagem:
+            img = _otimizar_imagem(imagem)
 
             nome_final = f"{token}.jpeg"
             caminho_final = os.path.join(pasta_destino, nome_final)
-            img.save(caminho_final, format='JPEG', optimize=True, quality=QUALIDADE_JPEG)
-            return nome_final
-    except Exception as e:
-        logger.warning(f"Falha ao otimizar temporário ({e}). Copiando diretamente.")
+
+            img.save(
+                caminho_final,
+                format="JPEG",
+                optimize=True,
+                quality=QUALIDADE_JPEG
+            )
+
+        return nome_final
+
+    except Exception:
+        logger.exception("Falha ao otimizar imagem temporária.")
+
         try:
-            import shutil
             nome_final = f"{token}.{ext}"
-            shutil.copy2(caminho_origem, os.path.join(pasta_destino, nome_final))
+            caminho_final = os.path.join(pasta_destino, nome_final)
+            shutil.copy2(caminho_origem, caminho_final)
             return nome_final
-        except Exception as e2:
-            logger.error(f"Erro ao salvar arquivo comprovante: {e2}")
+        except Exception:
+            logger.exception("Erro ao copiar comprovante temporário.")
             return None
 
 
 def remover_arquivo_comprovante(nome_arquivo: str | None) -> bool:
     """
-    Remove com segurança o arquivo físico da pasta uploads/comprovantes.
-    Não remove se outro registro ainda estiver referenciando o mesmo arquivo
-    (por exemplo, compras parceladas compartilhando o mesmo comprovante).
+    Remove o arquivo físico somente se nenhum gasto ou receita
+    continuar referenciando o comprovante.
+
+    Deve ser chamada depois do commit da exclusão do registro.
     """
     if not nome_arquivo:
         return False
 
     safe_name = os.path.basename(nome_arquivo)
 
-    # Verifica se algum outro gasto ou receita ainda referencia esse arquivo
-    from app.models.gasto import Gasto
-    from app.models.receita import Receita
-    
-    outros_gastos = Gasto.query.filter_by(comprovante=safe_name).count()
-    outras_receitas = Receita.query.filter_by(comprovante=safe_name).count()
-
-    # Se ainda houver 1 ou mais referências ativas após o registro atual, não deleta
-    # Nota: Deve ser chamado antes do commit se filtrado pelo ID, ou verificado se count <= 1
-    if outros_gastos + outras_receitas > 1:
-        logger.info(f"Arquivo {safe_name} ainda compartilhado por outros registros. Mantido no disco.")
+    if safe_name != nome_arquivo or safe_name in ("", ".", ".."):
+        logger.warning("Nome de comprovante inválido: %r", nome_arquivo)
         return False
 
-    pasta = obter_pasta_comprovantes()
-    caminho = os.path.join(pasta, safe_name)
-    if os.path.isfile(caminho):
-        try:
-            os.remove(caminho)
-            logger.info(f"Arquivo físico de comprovante removido: {safe_name}")
-            return True
-        except OSError as e:
-            logger.warning(f"Não foi possível remover arquivo físico {caminho}: {e}")
-    return False
+    try:
+        from app.models.gasto import Gasto
+        from app.models.receita import Receita
+
+        outros_gastos = Gasto.query.filter_by(
+            comprovante=safe_name
+        ).count()
+
+        outras_receitas = Receita.query.filter_by(
+            comprovante=safe_name
+        ).count()
+
+        # A exclusão já foi confirmada no banco. Qualquer referência
+        # restante significa que o arquivo ainda está em uso.
+        if outros_gastos + outras_receitas > 0:
+            logger.info(
+                "Comprovante %s ainda está sendo utilizado. Mantido.",
+                safe_name
+            )
+            return False
+
+        pasta = obter_pasta_comprovantes()
+        caminho = os.path.join(pasta, safe_name)
+
+        if not os.path.isfile(caminho):
+            return False
+
+        os.remove(caminho)
+        logger.info("Comprovante removido: %s", safe_name)
+        return True
+
+    except Exception:
+        logger.exception(
+            "Erro ao verificar ou remover comprovante: %s",
+            safe_name
+        )
+        return False

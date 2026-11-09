@@ -80,6 +80,14 @@ console.log(`- App ID: ${appId}`);
 console.log(`- App Name: ${appName}`);
 console.log(`- API URL (Backend): ${apiUrl}`);
 
+if (!apiUrl || apiUrl === '[URL_PUBLICA_DO_BACKEND]' || apiUrl.includes('[URL_PUBLICA_DO_BACKEND]')) {
+    console.error('\n❌ ERRO: A URL da API do backend não foi configurada!');
+    console.error('O build não pode continuar utilizando o placeholder [URL_PUBLICA_DO_BACKEND].');
+    console.error('Defina a variável API_URL no seu arquivo .env ou informe-a no ambiente antes de gerar o APK.');
+    console.error('Exemplo no .env: API_URL=https://meu-app.onrender.com\n');
+    process.exit(1);
+}
+
 // 1. Configuração do ambiente Java
 const validJavaHome = resolveJavaHome();
 if (validJavaHome) {

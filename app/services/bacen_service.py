@@ -256,50 +256,211 @@ class BacenService:
         return historico
 
 
+   
     @classmethod
-    def _obter_historico_com_meta(cls, forcar_api: bool = False) -> tuple[list[dict], str, str | None]:
+    def _consultar_api(cls) -> list[dict]:
+        """Consulta a série 433 e devolve 12 meses consecutivos e válidos."""
+
+        logger.info(
+            "Consultando API do Banco Central para IPCA (Série 433)..."
+        )
+
+        with _criar_sessao() as sessao:
+            # Primeira tentativa: consulta normal.
+            resposta = sessao.get(
+                BCB_API_URL,
+                timeout=BCB_TIMEOUT
+            )
+
+            logger.info(
+                "IPCA | Resposta BACEN: status=%s, content-type=%s, tamanho=%s",
+                resposta.status_code,
+                resposta.headers.get("Content-Type"),
+                len(resposta.content),
+            )
+
+            # 304 significa que o conteúdo não foi modificado.
+            # Como esta consulta não envia cabeçalhos condicionais,
+            # tentamos novamente sem reaproveitar a resposta 304.
+            if resposta.status_code == 304:
+                logger.warning(
+                    "IPCA | BACEN retornou 304. Repetindo consulta sem cache condicional."
+                )
+
+                resposta.close()
+
+                resposta = sessao.get(
+                    BCB_API_URL,
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Pragma": "no-cache",
+                    },
+                    timeout=BCB_TIMEOUT
+                )
+
+                logger.info(
+                    "IPCA | Segunda resposta BACEN: status=%s, content-type=%s, tamanho=%s",
+                    resposta.status_code,
+                    resposta.headers.get("Content-Type"),
+                    len(resposta.content),
+                )
+
+        if resposta.status_code == 304:
+            raise ValueError(
+                "O Banco Central continuou retornando HTTP 304."
+            )
+
+        resposta.raise_for_status()
+
+        if not resposta.content or not resposta.text.strip():
+            raise ValueError(
+                "O Banco Central retornou uma resposta vazia."
+            )
+
+        try:
+            dados = resposta.json()
+        except requests.exceptions.JSONDecodeError as e:
+            trecho = resposta.text[:300].replace("\n", " ")
+
+            logger.error(
+                "IPCA | Resposta não é JSON. Conteúdo recebido: %r",
+                trecho,
+            )
+
+            raise ValueError(
+                "O Banco Central retornou conteúdo que não é JSON."
+            ) from e
+
+        if not isinstance(dados, list) or not dados:
+            raise ValueError(
+                f"Resposta vazia ou inválida da API do BCB: {str(dados)[:200]}"
+            )
+
+        itens = []
+
+        for item in dados:
+            try:
+                itens.append(
+                    cls._montar_item(item["data"], item["valor"])
+                )
+            except (KeyError, TypeError, ValueError) as e:
+                logger.warning(
+                    "Item inválido da API ignorado: %r (%s)",
+                    item,
+                    e,
+                )
+
+        historico = cls._validar_historico(itens)
+
+        if historico is None:
+            raise ValueError(
+                "A API do BCB não retornou 12 meses consecutivos e válidos de IPCA."
+            )
+
+        return historico
+
+    @classmethod
+    def _obter_historico_com_meta(
+        cls,
+        forcar_api: bool = False
+    ) -> tuple[list[dict], str, str | None]:
         """
-        Retorna (historico, fonte, atualizado_em), onde:
-        - fonte: 'api_bacen' | 'cache_local' | 'referencia'
-        - atualizado_em: data/hora REAL da última sincronização com o BACEN
-          (None quando a fonte é a base de referência).
+        Retorna (historico, fonte, atualizado_em).
+
+        Utiliza cache recente quando disponível.
+        Se a API falhar, utiliza o cache válido antes da referência.
         """
+
         agora = time.time()
+        cache = None
 
         if not forcar_api:
-            # 1. Cache em memória (sem I/O nem consulta ao BACEN)
-            if cls._MEM_CACHE and (agora - cls._MEM_CACHE.get('timestamp', 0)) < CACHE_TTL_SEGUNDOS:
-                logger.info("IPCA | Usando cache em memória recente (%s), sem consultar BACEN.", cls._MEM_CACHE.get('atualizado_em'))
-                return cls._MEM_CACHE['historico'], 'cache_local', cls._MEM_CACHE['atualizado_em']
+            # 1. Cache em memória
+            if (
+                cls._MEM_CACHE
+                and (agora - cls._MEM_CACHE.get("timestamp", 0))
+                < CACHE_TTL_SEGUNDOS
+            ):
+                logger.info(
+                    "IPCA | Usando cache em memória recente (%s).",
+                    cls._MEM_CACHE.get("atualizado_em")
+                )
 
-            # 2. Cache em disco recente
+                return (
+                    cls._MEM_CACHE["historico"],
+                    "cache_local",
+                    cls._MEM_CACHE["atualizado_em"]
+                )
+
+            # 2. Cache em disco
             cache = cls._carregar_cache_disco()
-            if cache and (agora - cache.get('timestamp', 0)) < CACHE_TTL_SEGUNDOS:
+
+            if (
+                cache
+                and (agora - cache.get("timestamp", 0))
+                < CACHE_TTL_SEGUNDOS
+            ):
                 cls._MEM_CACHE = cache
-                logger.info("IPCA | Usando cache em disco recente (%s), sem consultar BACEN.", cache.get('atualizado_em'))
-                return cache['historico'], 'cache_local', cache['atualizado_em']
+
+                logger.info(
+                    "IPCA | Usando cache em disco recente (%s).",
+                    cache.get("atualizado_em")
+                )
+
+                return (
+                    cache["historico"],
+                    "cache_local",
+                    cache["atualizado_em"]
+                )
+
         else:
             cache = cls._carregar_cache_disco()
 
         try:
             historico = cls._consultar_api()
-            atualizado_em = datetime.now().strftime("%d/%m/%Y às %H:%M")
+
+            atualizado_em = datetime.now().strftime(
+                "%d/%m/%Y às %H:%M"
+            )
+
             dados_salvar = {
-                'timestamp': agora,
-                'atualizado_em': atualizado_em,
-                'historico': historico,
+                "timestamp": time.time(),
+                "atualizado_em": atualizado_em,
+                "historico": historico,
             }
+
             cls._salvar_cache_disco(dados_salvar)
             cls._MEM_CACHE = dados_salvar
-            return historico, 'api_bacen', atualizado_em
+
+            return historico, "api_bacen", atualizado_em
+
         except (requests.RequestException, ValueError) as e:
-            logger.warning(f"API do Banco Central indisponível ou inválida: {e}. Usando contingência.")
+            logger.warning(
+                "API do Banco Central indisponível ou inválida: %s.",
+                e
+            )
 
+        # 3. Cache válido, mesmo que esteja vencido
         if cache:
-            cls._MEM_CACHE = cache
-            return cache['historico'], 'cache_local', cache['atualizado_em']
+            logger.warning(
+                "IPCA | Utilizando cache local como contingência."
+            )
 
-        return FALLBACK_HISTORICO, 'referencia', None
+            cls._MEM_CACHE = cache
+
+            return (
+                cache["historico"],
+                "cache_local",
+                cache["atualizado_em"]
+            )
+
+        # 4. Sem cache válido
+        logger.error(
+            "IPCA | Nenhum cache válido disponível. Utilizando referência."
+        )
+
+        return FALLBACK_HISTORICO, "referencia", None
+
 
     @classmethod
     def obter_historico_ipca(cls, forcar_api: bool = False) -> tuple[list[dict], str]:

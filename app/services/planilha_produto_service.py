@@ -1,4 +1,5 @@
 import io
+import os
 import math
 import re
 import logging
@@ -410,9 +411,10 @@ class PlanilhaProdutoService:
         """Abre a imagem, corrige a rotação (fotos de celular) e amplia imagens pequenas.
         Prints pequenos (ex.: 215 px de largura) perdem espaços e vírgulas no OCR sem isso."""
         img = ImageOps.exif_transpose(Image.open(io.BytesIO(conteudo))).convert('RGB')
-        if max(img.size) > 1600:
-            img.thumbnail((1600, 1600), Image.LANCZOS)
-        fator = min(3, max(1, round(1600 / max(img.size))))
+        max_lado = int(os.getenv("OCR_MAX_LADO", "1600"))
+        if max(img.size) > max_lado:
+            img.thumbnail((max_lado, max_lado), Image.LANCZOS)
+        fator = min(3, max(1, round(max_lado / max(img.size))))
         if fator > 1:
             img = img.resize((img.width * fator, img.height * fator), Image.LANCZOS)
         return np.array(img)

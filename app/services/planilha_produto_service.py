@@ -2,6 +2,7 @@ import io
 import math
 import re
 import logging
+import time
 from datetime import datetime
 import numpy as np
 import pandas as pd
@@ -561,8 +562,12 @@ class PlanilhaProdutoService:
         Processa o reajuste de preços de acordo com o IPCA e gera arquivos de saída em PDF e Excel.
         """
         cls._validar_mes_vigencia(mes_vigencia)
+        t_inicio = time.perf_counter()
 
+        t_ocr_inicio = time.perf_counter()
         df = cls.ler_arquivo(arquivo_stream, nome_arquivo)
+        tempo_ocr = time.perf_counter() - t_ocr_inicio
+
         if df.empty:
             raise ValueError("O documento ou imagem enviada não contém dados legíveis.")
 
@@ -584,7 +589,9 @@ class PlanilhaProdutoService:
                 f"Certifique-se de que há uma coluna com preços ou valores dos itens."
             )
 
+        t_bacen_inicio = time.perf_counter()
         dados_indice = BacenService.calcular_indice_para_reajuste(modalidade, custom_taxa=taxa_manual)
+        tempo_bacen = time.perf_counter() - t_bacen_inicio
         taxa_ipca = dados_indice['percentual']
 
         fator_ipca = 1.0 + (taxa_ipca / 100.0)
@@ -675,18 +682,28 @@ class PlanilhaProdutoService:
         }
 
         # Geração do arquivo PDF no formato espelho comparativo solicitado pelo usuário
+        t_pdf_inicio = time.perf_counter()
         pdf_bytes = cls.gerar_pdf_reajustado(
             linhas_resultado=linhas_resultado,
             kpis=kpis,
             mes_vigencia=mes_vigencia
         )
+        tempo_pdf = time.perf_counter() - t_pdf_inicio
 
+        t_excel_inicio = time.perf_counter()
         excel_bytes = cls._gerar_excel_formatado(
             df_copia,
             coluna_preco,
             taxa_ipca,
             margem_adicional,
             dados_indice['descricao']
+        )
+        tempo_excel = time.perf_counter() - t_excel_inicio
+
+        tempo_total = time.perf_counter() - t_inicio
+        logger.info(
+            "REAJUSTE | Tempos por etapa: ocr=%.2fs | bacen=%.2fs | pdf=%.2fs | excel=%.2fs | total=%.2fs",
+            tempo_ocr, tempo_bacen, tempo_pdf, tempo_excel, tempo_total
         )
 
         timestamp_nome = datetime.now().strftime('%Y%m%d_%H%M')

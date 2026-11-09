@@ -197,8 +197,8 @@ class BacenService:
     # Consulta à API
     # ------------------------------------------------------------------
     @classmethod
-def _consultar_api(cls) -> list[dict]:
-    """Consulta a série 433 e devolve 12 meses consecutivos e válidos."""
+    def _consultar_api(cls) -> list[dict]:
+        """Consulta a série 433 e devolve 12 meses consecutivos e válidos."""
     logger.info("Consultando API do Banco Central para IPCA (Série 433)...")
 
     with _criar_sessao() as sessao:

@@ -139,9 +139,7 @@ def processar():
         'origem': request.form.get('origem', 'despesa')
     }
 
-    if resultado.get('modo_demo'):
-        flash('Modo demonstração ativo: configure sua GEMINI_API_KEY no arquivo .env para análise ao vivo.', 'warning')
-    elif resultado.get('ia_sucesso'):
+    if resultado.get('ia_sucesso'):
         flash('Nota fiscal interpretada com sucesso! Revise os dados abaixo antes de confirmar.', 'success')
     else:
         # Exibe a mensagem específica retornada pelo serviço (ex.: erro do extrator ou Ollama indisponível)

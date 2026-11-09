@@ -426,7 +426,6 @@ class PlanilhaProdutoService:
         Funciona para tabelas (produto e preço em caixas separadas) e para listas
         em texto corrido ("Produto - 10,95"), onde o OCR devolve a linha inteira numa caixa só.
         """
-        engine = _obter_ocr_engine()
         conteudo = stream.read()
         stream.seek(0)
 

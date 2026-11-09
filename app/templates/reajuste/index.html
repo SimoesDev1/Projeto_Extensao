@@ -1,3 +1,4 @@
+
 {% extends 'base.html' %}
 
 {% block title %}Reajuste de Preços (IPCA){% endblock %}
@@ -35,7 +36,7 @@
 
     <!-- CARDS DE INDICADORES IPCA (BACEN) -->
     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap:16px;">
-        
+
         <!-- CARD: ÚLTIMO MÊS -->
         <div class="card" style="padding:20px; border:1px solid var(--border); background:var(--surface); border-radius:var(--radius); position:relative; overflow:hidden;">
             <div style="position:absolute; top:-10px; right:-10px; width:70px; height:70px; background:radial-gradient(circle, var(--amber-glow) 0%, transparent 70%);"></div>
@@ -133,11 +134,11 @@
         <form action="{{ url_for('reajuste_ipca.processar') }}" method="POST" enctype="multipart/form-data" id="form-reajuste">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-            <!-- DROPZONE DE ARQUIVO COM DESTAQUE EM IMAGEM E PDF -->
+            <!-- DROPZONE DE ARQUIVO -->
             <div id="dropzone" style="border: 2px dashed rgba(129,140,248,0.45); background:rgba(22,27,39,0.5); border-radius:var(--radius); padding:40px 24px; text-align:center; cursor:pointer; transition:all 0.3s ease; position:relative;">
                 <input type="file" name="planilha" id="input-planilha" accept=".png,.jpg,.jpeg,.webp,.pdf,.xlsx,.xls,.csv" required
                        style="position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer;">
-                
+
                 <div id="dropzone-empty">
                     <div style="display:flex; justify-content:center; gap:14px; margin-bottom:16px;">
                         <div style="width:58px; height:58px; border-radius:50%; background:rgba(129,140,248,0.18); display:inline-flex; align-items:center; justify-content:center;">
@@ -172,13 +173,13 @@
 
             <!-- OPÇÕES DE REAJUSTE -->
             <div style="margin-top:28px; display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:20px;">
-                
+
                 <!-- MODALIDADE DO ÍNDICE -->
                 <div class="form-group" style="margin-bottom:0;">
                     <label class="form-label" style="display:flex; align-items:center; gap:6px; font-weight:700;">
                         <i class="bi bi-percent" style="color:var(--amber);"></i> Índice de Correção (IPCA)
                     </label>
-                    
+
                     <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
                         <label style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--surface-solid); border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer;">
                             <input type="radio" name="modalidade" value="12_meses" checked id="mod-12m">
@@ -220,7 +221,7 @@
 
                 <!-- MARGEM ADICIONAL E ARREDONDAMENTO -->
                 <div style="display:flex; flex-direction:column; gap:16px;">
-                    
+
                     <!-- MARGEM REAL ADICIONAL -->
                     <div class="form-group" style="margin-bottom:0;">
                         <label class="form-label" style="display:flex; align-items:center; gap:6px; font-weight:700;">
@@ -279,7 +280,7 @@
     <!-- SEÇÃO DE RESULTADOS -->
     {% if resultado %}
     <div id="secao-resultados" class="card" style="background:var(--surface); border:1px solid rgba(52,211,153,0.3); border-radius:var(--radius); padding:28px;" data-aos="fade-up">
-        
+
         <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:16px; margin-bottom:24px;">
             <div>
                 <span class="badge" style="background:rgba(52,211,153,0.18); color:var(--green); font-size:0.8rem; font-weight:700; margin-bottom:6px; display:inline-block;">
@@ -294,13 +295,11 @@
             </div>
 
             <div style="display:flex; gap:12px; flex-wrap:wrap;">
-                <!-- BOTÃO PRINCIPAL DE DOWNLOAD EM PDF -->
                 <a href="{{ url_for('reajuste_ipca.download_pdf', token=resultado.token) }}" class="btn btn-danger" style="padding:12px 22px; font-weight:700; font-size:0.95rem; display:inline-flex; align-items:center; gap:8px; text-decoration:none; background:#dc2626; border-color:#dc2626;">
                     <i class="bi bi-file-earmark-pdf-fill" style="font-size:1.2rem;"></i>
                     Baixar Tabela em PDF (.pdf)
                 </a>
-                
-                <!-- BOTÃO DE DOWNLOAD EM EXCEL -->
+
                 <a href="{{ url_for('reajuste_ipca.download_excel', token=resultado.token) }}" class="btn btn-success" style="padding:12px 20px; font-weight:700; font-size:0.95rem; display:inline-flex; align-items:center; gap:8px; text-decoration:none;">
                     <i class="bi bi-file-earmark-excel-fill" style="font-size:1.2rem;"></i>
                     Baixar em Excel (.xlsx)
@@ -363,7 +362,6 @@
             </div>
 
             <div style="overflow-x:auto; border:2px solid #2c385c; border-radius:var(--radius-sm); box-shadow: 0 4px 14px rgba(0,0,0,0.25);">
-                <!-- BARRA SUPERIOR AZUL -->
                 <div style="background:#2c385c; color:#fbbf24; padding:10px 16px; font-weight:800; font-size:0.92rem; text-align:center; letter-spacing:0.5px; display:flex; justify-content:space-between; align-items:center;">
                     <span style="color:#94a3b8; font-size:0.75rem; font-weight:600;">TABELA ANTERIOR</span>
                     <span style="color:#fbbf24; font-weight:800; font-size:1rem; letter-spacing:1px;">FORNECEDOR DOCE COMO MEL</span>
@@ -497,13 +495,18 @@ document.addEventListener('DOMContentLoaded', function() {
             const f = this.files[0];
             nomeArquivo.textContent = f.name;
             tamanhoArquivo.textContent = (f.size / 1024).toFixed(1) + ' KB';
-            
-            // Ajusta o ícone se for Imagem, PDF ou Excel
+
             const nameLower = f.name.toLowerCase();
+
             if (nameLower.endsWith('.pdf')) {
                 iconeArquivo.className = 'bi bi-file-earmark-pdf-fill';
                 iconeArquivo.style.color = 'var(--red)';
-            } else if (nameLower.endsWith('.png') || nameLower.endsWith('.jpg') || nameLower.endsWith('.jpeg') || nameLower.endsWith('.webp')) {
+            } else if (
+                nameLower.endsWith('.png') ||
+                nameLower.endsWith('.jpg') ||
+                nameLower.endsWith('.jpeg') ||
+                nameLower.endsWith('.webp')
+            ) {
                 iconeArquivo.className = 'bi bi-camera-fill';
                 iconeArquivo.style.color = 'var(--indigo)';
             } else {
@@ -535,74 +538,127 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Envio com timeout e tratamento de erro
+    // Reduz imagens grandes antes do envio
     async function reduzirImagem(arquivo, maxLado = 1600) {
         try {
-            const bmp = await createImageBitmap(arquivo, { imageOrientation: 'from-image' });
+            const bmp = await createImageBitmap(arquivo, {
+                imageOrientation: 'from-image'
+            });
+
             const maior = Math.max(bmp.width, bmp.height);
-            if (maior <= maxLado) { bmp.close(); return null; }
+
+            if (maior <= maxLado) {
+                bmp.close();
+                return null;
+            }
+
             const escala = maxLado / maior;
+
             const canvas = document.createElement('canvas');
             canvas.width = Math.round(bmp.width * escala);
             canvas.height = Math.round(bmp.height * escala);
-            canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+
+            const contexto = canvas.getContext('2d');
+
+            if (!contexto) {
+                bmp.close();
+                return null;
+            }
+
+            contexto.drawImage(
+                bmp,
+                0,
+                0,
+                canvas.width,
+                canvas.height
+            );
+
             bmp.close();
-            const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9));
-            return blob ? new File([blob], 'imagem.jpg', { type: 'image/jpeg' }) : null;
-        } catch (e) {
+
+            const blob = await new Promise(resolve => {
+                canvas.toBlob(resolve, 'image/jpeg', 0.9);
+            });
+
+            return blob
+                ? new File([blob], 'imagem.jpg', { type: 'image/jpeg' })
+                : null;
+
+        } catch (erro) {
+            console.error('Erro ao reduzir imagem:', erro);
             return null;
         }
     }
 
+    // Restaura o botão e esconde o carregamento
     function pararLoading() {
         btnProcessar.disabled = false;
-        btnProcessar.innerHTML = btnProcessar.dataset.textoOriginal || btnProcessar.innerHTML;
+
+        btnProcessar.innerHTML =
+            btnProcessar.dataset.textoOriginal ||
+            '<i class="bi bi-lightning-charge-fill"></i> Processar e Reajustar Tabela';
+
         const spinner = document.getElementById('page-spinner');
-        if (spinner) spinner.style.display = 'none';
+
+        if (spinner) {
+            spinner.style.display = 'none';
+        }
     }
 
+    // ENVIO TRADICIONAL DO FORMULÁRIO
+    // Evita que o fetch consuma o resultado armazenado na sessão Flask.
     formReajuste.addEventListener('submit', async function(e) {
         e.preventDefault();
+
         if (!inputPlanilha.files || !inputPlanilha.files[0]) {
-            alert('Por favor, selecione uma imagem/print, documento PDF ou planilha antes de processar.');
+            alert(
+                'Por favor, selecione uma imagem/print, documento PDF ou planilha antes de processar.'
+            );
             return;
         }
+
         btnProcessar.dataset.textoOriginal = btnProcessar.innerHTML;
         btnProcessar.disabled = true;
-        btnProcessar.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Processando documento com API do Banco Central...';
-        const spinner = document.getElementById('page-spinner');
-        if (spinner) spinner.style.display = 'flex';
 
-        const fd = new FormData(formReajuste);
-        const arq = inputPlanilha.files[0];
-        if (arq.type && arq.type.startsWith('image/')) {
-            const reduzida = await reduzirImagem(arq);
-            if (reduzida) fd.set(inputPlanilha.name, reduzida);
+        btnProcessar.innerHTML =
+            '<i class="bi bi-arrow-repeat spin"></i> Processando documento com OCR e IPCA...';
+
+        const spinner = document.getElementById('page-spinner');
+
+        if (spinner) {
+            spinner.style.display = 'flex';
         }
 
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 95000);
         try {
-            const resp = await fetch(formReajuste.action, {
-                method: 'POST',
-                body: fd,
-                credentials: 'same-origin',
-                signal: controller.signal
-            });
-            if (!resp.ok) {
-                throw new Error('O servidor respondeu com erro ' + resp.status + '. Tente novamente em instantes.');
+            const arquivo = inputPlanilha.files[0];
+
+            // Reduz imagens grandes antes do envio
+            if (arquivo.type && arquivo.type.startsWith('image/')) {
+                const reduzida = await reduzirImagem(arquivo);
+
+                if (reduzida) {
+                    const dadosTransferencia = new DataTransfer();
+                    dadosTransferencia.items.add(reduzida);
+                    inputPlanilha.files = dadosTransferencia.files;
+                }
             }
-            window.location.href = resp.url;
-        } catch (err) {
+
+            // Envio tradicional: o navegador segue o redirect do Flask.
+            // Assim, o resultado da sessão é consumido apenas uma vez,
+            // quando a página final é carregada.
+            HTMLFormElement.prototype.submit.call(formReajuste);
+
+        } catch (erro) {
+            console.error('Erro ao preparar o arquivo:', erro);
+
             pararLoading();
-            alert(err.name === 'AbortError'
-                ? 'O processamento demorou demais. Tente com um arquivo menor ou novamente.'
-                : (err.message || 'Falha ao enviar o arquivo.'));
-        } finally {
-            clearTimeout(timer);
+
+            alert(
+                'Não foi possível preparar o arquivo para envio. Tente novamente.'
+            );
         }
     });
 
+    // Restaura a interface quando a página é carregada ou recuperada
     window.addEventListener('pageshow', function() {
         pararLoading();
     });

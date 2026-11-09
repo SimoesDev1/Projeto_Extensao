@@ -271,6 +271,13 @@ class BacenService:
                 BCB_API_URL,
                 timeout=BCB_TIMEOUT
             )
+            logger.info(
+                "IPCA | Diagnóstico HTTP | URL=%s | "
+                "Request-Headers=%s | Response-Headers=%s",
+                resposta.url,
+                dict(resposta.request.headers),
+                dict(resposta.headers),
+            )
 
             logger.info(
                 "IPCA | Resposta BACEN: status=%s, content-type=%s, tamanho=%s",
@@ -296,6 +303,13 @@ class BacenService:
                         "Pragma": "no-cache",
                     },
                     timeout=BCB_TIMEOUT
+                )
+                logger.info(
+                    "IPCA | Diagnóstico HTTP | URL=%s | "
+                    "Request-Headers=%s | Response-Headers=%s",
+                    resposta.url,
+                    dict(resposta.request.headers),
+                    dict(resposta.headers),
                 )
 
                 logger.info(

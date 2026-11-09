@@ -196,19 +196,14 @@ class BacenService:
         # ------------------------------------------------------------------
     # Consulta à API
     # ------------------------------------------------------------------
+    
     @classmethod
     def _consultar_api(cls) -> list[dict]:
         """Consulta a série 433 e devolve 12 meses consecutivos e válidos."""
-
-        logger.info(
-            "Consultando API do Banco Central para IPCA (Série 433)..."
-        )
+        logger.info("Consultando API do Banco Central para IPCA (Série 433)...")
 
         with _criar_sessao() as sessao:
-            resposta = sessao.get(
-                BCB_API_URL,
-                timeout=BCB_TIMEOUT
-            )
+            resposta = sessao.get(BCB_API_URL, timeout=BCB_TIMEOUT)
 
         logger.info(
             "IPCA | Resposta BACEN: status=%s, content-type=%s, tamanho=%s",
@@ -220,21 +215,16 @@ class BacenService:
         resposta.raise_for_status()
 
         if not resposta.content or not resposta.text.strip():
-            raise ValueError(
-                "O Banco Central retornou uma resposta vazia."
-            )
+            raise ValueError("O Banco Central retornou uma resposta vazia.")
 
         try:
             dados = resposta.json()
-
         except requests.exceptions.JSONDecodeError as e:
             trecho = resposta.text[:300].replace("\n", " ")
-
             logger.error(
                 "IPCA | Resposta não é JSON. Conteúdo recebido: %r",
                 trecho,
             )
-
             raise ValueError(
                 "O Banco Central retornou conteúdo que não é JSON."
             ) from e
@@ -248,10 +238,7 @@ class BacenService:
 
         for item in dados:
             try:
-                itens.append(
-                    cls._montar_item(item['data'], item['valor'])
-                )
-
+                itens.append(cls._montar_item(item['data'], item['valor']))
             except (KeyError, TypeError, ValueError) as e:
                 logger.warning(
                     "Item inválido da API ignorado: %r (%s)",
@@ -267,6 +254,7 @@ class BacenService:
             )
 
         return historico
+
 
     @classmethod
     def _obter_historico_com_meta(cls, forcar_api: bool = False) -> tuple[list[dict], str, str | None]:

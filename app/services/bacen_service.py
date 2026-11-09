@@ -196,65 +196,6 @@ class BacenService:
         # ------------------------------------------------------------------
     # Consulta à API
     # ------------------------------------------------------------------
-    
-    @classmethod
-    def _consultar_api(cls) -> list[dict]:
-        """Consulta a série 433 e devolve 12 meses consecutivos e válidos."""
-        logger.info("Consultando API do Banco Central para IPCA (Série 433)...")
-
-        with _criar_sessao() as sessao:
-            resposta = sessao.get(BCB_API_URL, timeout=BCB_TIMEOUT)
-
-        logger.info(
-            "IPCA | Resposta BACEN: status=%s, content-type=%s, tamanho=%s",
-            resposta.status_code,
-            resposta.headers.get("Content-Type"),
-            len(resposta.content),
-        )
-
-        resposta.raise_for_status()
-
-        if not resposta.content or not resposta.text.strip():
-            raise ValueError("O Banco Central retornou uma resposta vazia.")
-
-        try:
-            dados = resposta.json()
-        except requests.exceptions.JSONDecodeError as e:
-            trecho = resposta.text[:300].replace("\n", " ")
-            logger.error(
-                "IPCA | Resposta não é JSON. Conteúdo recebido: %r",
-                trecho,
-            )
-            raise ValueError(
-                "O Banco Central retornou conteúdo que não é JSON."
-            ) from e
-
-        if not isinstance(dados, list) or not dados:
-            raise ValueError(
-                f"Resposta vazia ou inválida da API do BCB: {str(dados)[:200]}"
-            )
-
-        itens = []
-
-        for item in dados:
-            try:
-                itens.append(cls._montar_item(item['data'], item['valor']))
-            except (KeyError, TypeError, ValueError) as e:
-                logger.warning(
-                    "Item inválido da API ignorado: %r (%s)",
-                    item,
-                    e,
-                )
-
-        historico = cls._validar_historico(itens)
-
-        if historico is None:
-            raise ValueError(
-                "A API do BCB não retornou 12 meses consecutivos e válidos de IPCA."
-            )
-
-        return historico
-
 
    
     @classmethod
@@ -277,13 +218,6 @@ class BacenService:
                 resposta.url,
                 dict(resposta.request.headers),
                 dict(resposta.headers),
-            )
-
-            logger.info(
-                "IPCA | Resposta BACEN: status=%s, content-type=%s, tamanho=%s",
-                resposta.status_code,
-                resposta.headers.get("Content-Type"),
-                len(resposta.content),
             )
 
             # 304 significa que o conteúdo não foi modificado.

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class AiChatService:
     OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
     OLLAMA_MODEL = os.getenv("OLLAMA_CHAT_MODEL", os.getenv("OLLAMA_MODEL", "qwen3-vl:4b-instruct"))
-    TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+    TIMEOUT = min(int(os.getenv("OLLAMA_TIMEOUT", "90")), 95)
 
     @classmethod
     def is_configurado(cls) -> bool:

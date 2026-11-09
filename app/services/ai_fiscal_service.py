@@ -19,7 +19,7 @@ class AiFiscalService:
     OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
     # Variante "instruct" não faz raciocínio (<think>), logo é mais rápida.
     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3-vl:4b-instruct")
-    TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "180"))
+    TIMEOUT = min(int(os.getenv("OLLAMA_TIMEOUT", "90")), 95)
     NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
     NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "2048"))
     KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
@@ -149,7 +149,7 @@ class AiFiscalService:
         import time as _time
         from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutTimeout
 
-        TIMEOUT_S = int(os.getenv("EXTRACAO_TIMEOUT", "120"))  # 2 min padrão
+        TIMEOUT_S = min(int(os.getenv("EXTRACAO_TIMEOUT", "90")), 95)
         _t0 = _time.perf_counter()
 
         try:

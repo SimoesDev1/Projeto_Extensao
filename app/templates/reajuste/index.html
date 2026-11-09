@@ -1,4 +1,3 @@
-
 {% extends 'base.html' %}
 
 {% block title %}Reajuste de Preços (IPCA){% endblock %}
@@ -467,14 +466,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Mês de vigência: já vem preenchido com o mês atual
     const inputMes = document.getElementById('mes_vigencia');
+
     if (inputMes && !inputMes.value) {
         const hoje = new Date();
-        inputMes.value = hoje.getFullYear() + '-' + String(hoje.getMonth() + 1).padStart(2, '0');
+        inputMes.value =
+            hoje.getFullYear() + '-' +
+            String(hoje.getMonth() + 1).padStart(2, '0');
     }
 
-    // Drag and drop events
+    // Eventos visuais de drag and drop
     ['dragenter', 'dragover'].forEach(evt => {
-        dropzone.addEventListener(evt, (e) => {
+        dropzone.addEventListener(evt, function(e) {
             e.preventDefault();
             dropzone.style.borderColor = 'var(--red)';
             dropzone.style.background = 'rgba(248,113,113,0.08)';
@@ -482,7 +484,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     ['dragleave', 'drop'].forEach(evt => {
-        dropzone.addEventListener(evt, (e) => {
+        dropzone.addEventListener(evt, function(e) {
             e.preventDefault();
             dropzone.style.borderColor = 'rgba(248,113,113,0.4)';
             dropzone.style.background = 'rgba(22,27,39,0.5)';
@@ -493,14 +495,18 @@ document.addEventListener('DOMContentLoaded', function() {
     inputPlanilha.addEventListener('change', function() {
         if (this.files && this.files[0]) {
             const f = this.files[0];
+
             nomeArquivo.textContent = f.name;
-            tamanhoArquivo.textContent = (f.size / 1024).toFixed(1) + ' KB';
+            tamanhoArquivo.textContent =
+                (f.size / 1024).toFixed(1) + ' KB';
 
             const nameLower = f.name.toLowerCase();
 
             if (nameLower.endsWith('.pdf')) {
-                iconeArquivo.className = 'bi bi-file-earmark-pdf-fill';
+                iconeArquivo.className =
+                    'bi bi-file-earmark-pdf-fill';
                 iconeArquivo.style.color = 'var(--red)';
+
             } else if (
                 nameLower.endsWith('.png') ||
                 nameLower.endsWith('.jpg') ||
@@ -509,85 +515,49 @@ document.addEventListener('DOMContentLoaded', function() {
             ) {
                 iconeArquivo.className = 'bi bi-camera-fill';
                 iconeArquivo.style.color = 'var(--indigo)';
+
             } else {
-                iconeArquivo.className = 'bi bi-file-earmark-excel-fill';
+                iconeArquivo.className =
+                    'bi bi-file-earmark-excel-fill';
                 iconeArquivo.style.color = 'var(--green)';
             }
 
             dropzoneEmpty.style.display = 'none';
             dropzoneFile.style.display = 'flex';
+        } else {
+            dropzoneEmpty.style.display = 'block';
+            dropzoneFile.style.display = 'none';
         }
     });
 
+    // Remover arquivo selecionado
     btnRemover.addEventListener('click', function(e) {
+        e.preventDefault();
         e.stopPropagation();
+
         inputPlanilha.value = '';
+
         dropzoneEmpty.style.display = 'block';
         dropzoneFile.style.display = 'none';
     });
 
-    // Toggle taxa manual
+    // Toggle da taxa manual
     document.querySelectorAll('input[name="modalidade"]').forEach(r => {
         r.addEventListener('change', function() {
             if (modManual.checked) {
                 boxTaxaManual.style.display = 'block';
-                document.getElementById('taxa_manual').focus();
+
+                const taxaManual =
+                    document.getElementById('taxa_manual');
+
+                if (taxaManual) {
+                    taxaManual.focus();
+                }
             } else {
                 boxTaxaManual.style.display = 'none';
             }
         });
     });
-
-    // Reduz imagens grandes antes do envio
-    async function reduzirImagem(arquivo, maxLado = 1600) {
-        try {
-            const bmp = await createImageBitmap(arquivo, {
-                imageOrientation: 'from-image'
-            });
-
-            const maior = Math.max(bmp.width, bmp.height);
-
-            if (maior <= maxLado) {
-                bmp.close();
-                return null;
-            }
-
-            const escala = maxLado / maior;
-
-            const canvas = document.createElement('canvas');
-            canvas.width = Math.round(bmp.width * escala);
-            canvas.height = Math.round(bmp.height * escala);
-
-            const contexto = canvas.getContext('2d');
-
-            if (!contexto) {
-                bmp.close();
-                return null;
-            }
-
-            contexto.drawImage(
-                bmp,
-                0,
-                0,
-                canvas.width,
-                canvas.height
-            );
-
-            bmp.close();
-
-            const blob = await new Promise(resolve => {
-                canvas.toBlob(resolve, 'image/jpeg', 0.9);
-            });
-
-            return blob
-                ? new File([blob], 'imagem.jpg', { type: 'image/jpeg' })
-                : null;
-
-        } catch (erro) {
-            console.error('Erro ao reduzir imagem:', erro);
-            return null;
-        }
-    }
 
     // Restaura o botão e esconde o carregamento
     function pararLoading() {
@@ -597,71 +567,66 @@ document.addEventListener('DOMContentLoaded', function() {
             btnProcessar.dataset.textoOriginal ||
             '<i class="bi bi-lightning-charge-fill"></i> Processar e Reajustar Tabela';
 
-        const spinner = document.getElementById('page-spinner');
+        const spinner =
+            document.getElementById('page-spinner');
 
         if (spinner) {
             spinner.style.display = 'none';
         }
     }
 
-    // ENVIO TRADICIONAL DO FORMULÁRIO
-    // Evita que o fetch consuma o resultado armazenado na sessão Flask.
-    formReajuste.addEventListener('submit', async function(e) {
-        e.preventDefault();
+    // ENVIO NATIVO DO FORMULÁRIO
+    // Não utiliza createImageBitmap, DataTransfer, File ou fetch.
+    // O próprio Safari envia o arquivo diretamente ao Flask.
+    formReajuste.addEventListener('submit', function(e) {
 
+        // Verifica se existe arquivo selecionado
         if (!inputPlanilha.files || !inputPlanilha.files[0]) {
+            e.preventDefault();
+
             alert(
                 'Por favor, selecione uma imagem/print, documento PDF ou planilha antes de processar.'
             );
+
             return;
         }
 
-        btnProcessar.dataset.textoOriginal = btnProcessar.innerHTML;
+        // Guarda o texto original do botão
+        btnProcessar.dataset.textoOriginal =
+            btnProcessar.innerHTML;
+
+        // Evita cliques duplicados
         btnProcessar.disabled = true;
 
+        // Atualiza o botão
         btnProcessar.innerHTML =
             '<i class="bi bi-arrow-repeat spin"></i> Processando documento com OCR e IPCA...';
 
-        const spinner = document.getElementById('page-spinner');
+        // Exibe o carregamento global, se existir
+        const spinner =
+            document.getElementById('page-spinner');
 
         if (spinner) {
             spinner.style.display = 'flex';
         }
 
-        try {
-            const arquivo = inputPlanilha.files[0];
-
-            // Reduz imagens grandes antes do envio
-            if (arquivo.type && arquivo.type.startsWith('image/')) {
-                const reduzida = await reduzirImagem(arquivo);
-
-                if (reduzida) {
-                    const dadosTransferencia = new DataTransfer();
-                    dadosTransferencia.items.add(reduzida);
-                    inputPlanilha.files = dadosTransferencia.files;
-                }
-            }
-
-            // Envio tradicional: o navegador segue o redirect do Flask.
-            // Assim, o resultado da sessão é consumido apenas uma vez,
-            // quando a página final é carregada.
-            HTMLFormElement.prototype.submit.call(formReajuste);
-
-        } catch (erro) {
-            console.error('Erro ao preparar o arquivo:', erro);
-
-            pararLoading();
-
-            alert(
-                'Não foi possível preparar o arquivo para envio. Tente novamente.'
-            );
-        }
+        /*
+         * IMPORTANTE:
+         * Não chamar e.preventDefault() aqui.
+         * Não chamar fetch().
+         * Não chamar HTMLFormElement.prototype.submit().
+         *
+         * O navegador continuará com o envio nativo do formulário,
+         * enviando o arquivo e seguindo o redirect do Flask.
+         */
     });
 
-    // Restaura a interface quando a página é carregada ou recuperada
+    // Restaura a interface quando a página é carregada
+    // ou recuperada pelo histórico do Safari.
     window.addEventListener('pageshow', function() {
         pararLoading();
     });
+
 });
 </script>
 {% endblock %}

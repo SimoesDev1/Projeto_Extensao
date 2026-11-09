@@ -26,9 +26,33 @@ logger = logging.getLogger(__name__)
 
 # Instância preguiçosa do RapidOCR para processar imagens/prints locais
 import threading as _threading
+import hashlib
+from collections import OrderedDict
+
 _OCR_LOCK = _threading.Lock()
 _OCR_INFERENCE_LOCK = _threading.Lock()
 _OCR_ENGINE = None
+
+# Cache LRU de OCR indexado por SHA-256 do arquivo (máx. 8 entradas)
+_OCR_CACHE = OrderedDict()
+_OCR_CACHE_LOCK = _threading.Lock()
+_OCR_CACHE_MAX = 8
+
+
+def _obter_ocr_cache(chave: str):
+    with _OCR_CACHE_LOCK:
+        if chave in _OCR_CACHE:
+            _OCR_CACHE.move_to_end(chave)
+            return _OCR_CACHE[chave]
+    return None
+
+
+def _salvar_ocr_cache(chave: str, valor):
+    with _OCR_CACHE_LOCK:
+        _OCR_CACHE[chave] = valor
+        _OCR_CACHE.move_to_end(chave)
+        if len(_OCR_CACHE) > _OCR_CACHE_MAX:
+            _OCR_CACHE.popitem(last=False)
 
 # Linha de lista de preços lida por OCR. Aceita variações reais do OCR:
 #   "• Banoffe - 10,95" | "Banoffe-10.95" | "Gelatina diet de amora -5,78" | "Banoffe R$ 10,42"
@@ -404,6 +428,13 @@ class PlanilhaProdutoService:
         conteudo = stream.read()
         stream.seek(0)
 
+        # Cache de OCR por SHA-256 do arquivo (máx. 8 entradas)
+        hash_arquivo = hashlib.sha256(conteudo).hexdigest()
+        cached_df = _obter_ocr_cache(f"df_{hash_arquivo}")
+        if cached_df is not None:
+            logger.info("OCR | Reutilizando resultado do cache SHA-256: %s...", hash_arquivo[:12])
+            return cached_df.copy()
+
         try:
             imagem = cls._preparar_imagem_para_ocr(conteudo)
         except Exception:
@@ -466,7 +497,9 @@ class PlanilhaProdutoService:
         if not produtos_extraidos:
             raise ValueError("Não foi possível identificar pares de produto e preço na imagem/print. Verifique se a imagem contém preços visíveis com centavos.")
 
-        return pd.DataFrame(produtos_extraidos, columns=['Produto', 'Preço'])
+        df_extraido = pd.DataFrame(produtos_extraidos, columns=['Produto', 'Preço'])
+        _salvar_ocr_cache(f"df_{hash_arquivo}", df_extraido)
+        return df_extraido
 
     @classmethod
     def ler_arquivo_pdf(cls, stream) -> pd.DataFrame:

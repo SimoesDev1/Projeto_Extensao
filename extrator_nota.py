@@ -19,6 +19,8 @@ import io
 import re
 import logging
 import time
+import hashlib
+import copy
 
 from datetime import datetime
 from typing import Any
@@ -49,6 +51,24 @@ def _executar_ocr(imagem):
     )
 
     return executar(imagem)
+
+
+def _obter_ocr_cache(chave: str):
+    """Obtém resultado do OCR em cache."""
+    try:
+        from app.services.planilha_produto_service import _obter_ocr_cache as obter
+        return obter(chave)
+    except Exception:
+        return None
+
+
+def _salvar_ocr_cache(chave: str, valor):
+    """Salva resultado do OCR em cache."""
+    try:
+        from app.services.planilha_produto_service import _salvar_ocr_cache as salvar
+        salvar(chave, valor)
+    except Exception:
+        pass
 
 
 # ============================================================
@@ -279,6 +299,15 @@ def extrair_dados_imagem_ocr(image_bytes: bytes) -> dict[str, Any]:
         len(image_bytes)
     )
 
+    hash_arquivo = hashlib.sha256(image_bytes).hexdigest()
+    cached = _obter_ocr_cache(f"nota_{hash_arquivo}")
+    if cached is not None:
+        logger.info(
+            "EXTRATOR | extrair_dados_imagem_ocr | Cache SHA-256 atingido (%s) | %.3fs",
+            hash_arquivo[:12], time.perf_counter() - _t0_ocr_fn
+        )
+        return copy.deepcopy(cached)
+
     texto_completo = _imagem_bytes_para_texto_ocr(image_bytes)
 
     if not texto_completo.strip():
@@ -302,6 +331,7 @@ def extrair_dados_imagem_ocr(image_bytes: bytes) -> dict[str, Any]:
 
     # Reutiliza o pipeline de regex
     resultado = _extrair_de_texto(texto_completo)
+    _salvar_ocr_cache(f"nota_{hash_arquivo}", resultado)
     logger.info(
         "EXTRATOR | extrair_dados_imagem_ocr | fim | total=%.2f | %.1fs",
         float(resultado.get("valor_total") or 0),

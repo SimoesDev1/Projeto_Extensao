@@ -22,8 +22,8 @@ BCB_API_URL = (
 BCB_TIMEOUT = (3, 6)  # (conexão, leitura) em segundos
 QTD_MESES_HISTORICO = 12
 
-# O IPCA é mensal, então um cache de algumas horas é seguro.
-CACHE_TTL_SEGUNDOS = 6 * 3600
+# O IPCA é mensal, então um cache local recente de 24 horas sem consultar o BACEN é seguro e suficiente.
+CACHE_TTL_SEGUNDOS = int(os.getenv("IPCA_CACHE_TTL", str(24 * 3600)))
 
 # Caminho do cache em disco
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
@@ -93,6 +93,8 @@ def _criar_sessao() -> requests.Session:
 
 
 class BacenService:
+    _MEM_CACHE: dict | None = None
+
     # ------------------------------------------------------------------
     # Utilitários
     # ------------------------------------------------------------------
@@ -226,25 +228,39 @@ class BacenService:
         - atualizado_em: data/hora REAL da última sincronização com o BACEN
           (None quando a fonte é a base de referência).
         """
-        cache = cls._carregar_cache_disco()
         agora = time.time()
 
-        if cache and not forcar_api and (agora - cache['timestamp']) < CACHE_TTL_SEGUNDOS:
-            return cache['historico'], 'cache_local', cache['atualizado_em']
+        if not forcar_api:
+            # 1. Cache em memória (sem I/O nem consulta ao BACEN)
+            if cls._MEM_CACHE and (agora - cls._MEM_CACHE.get('timestamp', 0)) < CACHE_TTL_SEGUNDOS:
+                logger.info("IPCA | Usando cache em memória recente (%s), sem consultar BACEN.", cls._MEM_CACHE.get('atualizado_em'))
+                return cls._MEM_CACHE['historico'], 'cache_local', cls._MEM_CACHE['atualizado_em']
+
+            # 2. Cache em disco recente
+            cache = cls._carregar_cache_disco()
+            if cache and (agora - cache.get('timestamp', 0)) < CACHE_TTL_SEGUNDOS:
+                cls._MEM_CACHE = cache
+                logger.info("IPCA | Usando cache em disco recente (%s), sem consultar BACEN.", cache.get('atualizado_em'))
+                return cache['historico'], 'cache_local', cache['atualizado_em']
+        else:
+            cache = cls._carregar_cache_disco()
 
         try:
             historico = cls._consultar_api()
             atualizado_em = datetime.now().strftime("%d/%m/%Y às %H:%M")
-            cls._salvar_cache_disco({
+            dados_salvar = {
                 'timestamp': agora,
                 'atualizado_em': atualizado_em,
                 'historico': historico,
-            })
+            }
+            cls._salvar_cache_disco(dados_salvar)
+            cls._MEM_CACHE = dados_salvar
             return historico, 'api_bacen', atualizado_em
         except (requests.RequestException, ValueError) as e:
             logger.warning(f"API do Banco Central indisponível ou inválida: {e}. Usando contingência.")
 
         if cache:
+            cls._MEM_CACHE = cache
             return cache['historico'], 'cache_local', cache['atualizado_em']
 
         return FALLBACK_HISTORICO, 'referencia', None

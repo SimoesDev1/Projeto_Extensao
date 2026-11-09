@@ -195,9 +195,25 @@
         })();
 
         // ── Spinner em submissões de formulário ──
+        let _spinnerTimeout = null;
+        function pararSpinnerGlobal() {
+            const spinner = document.getElementById('page-spinner');
+            if (spinner) spinner.style.display = 'none';
+            if (_spinnerTimeout) {
+                clearTimeout(_spinnerTimeout);
+                _spinnerTimeout = null;
+            }
+        }
+
+        window.addEventListener('pageshow', pararSpinnerGlobal);
+
         document.querySelectorAll('form[data-loading]').forEach(form => {
-            form.addEventListener('submit', () => {
-                document.getElementById('page-spinner').style.display = 'flex';
+            form.addEventListener('submit', (e) => {
+                if (e.defaultPrevented) return;
+                const spinner = document.getElementById('page-spinner');
+                if (spinner) spinner.style.display = 'flex';
+                if (_spinnerTimeout) clearTimeout(_spinnerTimeout);
+                _spinnerTimeout = setTimeout(pararSpinnerGlobal, 95000);
             });
         });
 

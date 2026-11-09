@@ -581,7 +581,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 120000);
+        const timer = setTimeout(() => controller.abort(), 95000);
         try {
             const resp = await fetch(formReajuste.action, {
                 method: 'POST',
@@ -603,8 +603,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    window.addEventListener('pageshow', function(ev) {
-        if (ev.persisted) pararLoading();
+    window.addEventListener('pageshow', function() {
+        pararLoading();
     });
 });
 </script>

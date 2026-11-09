@@ -187,18 +187,12 @@ def create_app():
         from flask import send_from_directory
         return send_from_directory(os.path.join(app.static_folder, 'img'), 'favicon.ico')
 
-    # ── Keep-alive / Health Check (Público, sem auth, sem rate limit) ─────────
+    # ── Keep-alive / Health Check (Público, sem auth, sem rate limit e sem banco) ──
     @app.route('/health', methods=['GET'])
     @limiter.exempt
     @csrf.exempt
     def health():
-        try:
-            from sqlalchemy import text
-            db.session.execute(text('SELECT 1'))
-            return jsonify({'status': 'ok'}), 200
-        except Exception as e:
-            logger.error(f"Health check falhou: {e}")
-            return jsonify({'status': 'error', 'message': str(e)}), 503
+        return jsonify({'status': 'ok'}), 200
 
     return app
 

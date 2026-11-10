@@ -142,6 +142,7 @@ document.addEventListener('DOMContentLoaded', function () {
         '<i class="bi bi-stars"></i> Interpretar Nota com Inteligência Artificial';
     const URL_STATUS = '{{ url_for("ia_fiscal.status", job_id="__ID__") }}';
     let aguardando = false;
+    let enviando = false;
 
     function guardarJob(id) { try { sessionStorage.setItem(CHAVE_JOB, id); } catch (_) {} }
     function lerJob() { try { return sessionStorage.getItem(CHAVE_JOB); } catch (_) { return null; } }
@@ -256,6 +257,12 @@ document.addEventListener('DOMContentLoaded', function () {
     formUpload.addEventListener('submit', async function (event) {
         event.preventDefault();
 
+        if (enviando || aguardando) {
+            console.warn('IA UPLOAD | Envio duplicado ignorado.');
+            return;
+        }
+
+
         if (!inputFile.files[0]) {
             alert('Selecione uma imagem ou PDF antes de continuar.');
             return;
@@ -265,6 +272,7 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
+        enviando = true;
         ocupado('Enviando documento...');
 
         try {
@@ -294,6 +302,8 @@ document.addEventListener('DOMContentLoaded', function () {
             console.error('IA UPLOAD |', erro);
             alert(erro.message);
             pronto();
+        } finally {
+            enviando = false;
         }
     });
 

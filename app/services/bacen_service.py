@@ -64,18 +64,19 @@ NOMES_MESES = {
 }
 
 # ATENÇÃO: base de contingência usada somente se a API e o cache falharem.
-# Os valores precisam ser conferidos contra a série oficial.
+# Valores copiados da série 433 do BACEN (via API) em 10/11/2026, período
+# Out/2025 a Set/2026. Ficam desatualizados a cada novo IPCA divulgado.
 # Por padrão, o reajuste não utiliza esta base.
 FALLBACK_HISTORICO = [
-    {"data": "01/10/2025", "valor": 0.24, "rotulo": "Out/2025", "mes_nome": "Outubro", "ano": 2025, "mes": 10},
-    {"data": "01/11/2025", "valor": 0.28, "rotulo": "Nov/2025", "mes_nome": "Novembro", "ano": 2025, "mes": 11},
-    {"data": "01/12/2025", "valor": 0.56, "rotulo": "Dez/2025", "mes_nome": "Dezembro", "ano": 2025, "mes": 12},
-    {"data": "01/01/2026", "valor": 0.42, "rotulo": "Jan/2026", "mes_nome": "Janeiro", "ano": 2026, "mes": 1},
-    {"data": "01/02/2026", "valor": 0.83, "rotulo": "Fev/2026", "mes_nome": "Fevereiro", "ano": 2026, "mes": 2},
-    {"data": "01/03/2026", "valor": 0.16, "rotulo": "Mar/2026", "mes_nome": "Março", "ano": 2026, "mes": 3},
-    {"data": "01/04/2026", "valor": 0.38, "rotulo": "Abr/2026", "mes_nome": "Abril", "ano": 2026, "mes": 4},
-    {"data": "01/05/2026", "valor": 0.46, "rotulo": "Mai/2026", "mes_nome": "Maio", "ano": 2026, "mes": 5},
-    {"data": "01/06/2026", "valor": 0.21, "rotulo": "Jun/2026", "mes_nome": "Junho", "ano": 2026, "mes": 6},
+    {"data": "01/10/2025", "valor": 0.09, "rotulo": "Out/2025", "mes_nome": "Outubro", "ano": 2025, "mes": 10},
+    {"data": "01/11/2025", "valor": 0.18, "rotulo": "Nov/2025", "mes_nome": "Novembro", "ano": 2025, "mes": 11},
+    {"data": "01/12/2025", "valor": 0.33, "rotulo": "Dez/2025", "mes_nome": "Dezembro", "ano": 2025, "mes": 12},
+    {"data": "01/01/2026", "valor": 0.33, "rotulo": "Jan/2026", "mes_nome": "Janeiro", "ano": 2026, "mes": 1},
+    {"data": "01/02/2026", "valor": 0.7, "rotulo": "Fev/2026", "mes_nome": "Fevereiro", "ano": 2026, "mes": 2},
+    {"data": "01/03/2026", "valor": 0.88, "rotulo": "Mar/2026", "mes_nome": "Março", "ano": 2026, "mes": 3},
+    {"data": "01/04/2026", "valor": 0.67, "rotulo": "Abr/2026", "mes_nome": "Abril", "ano": 2026, "mes": 4},
+    {"data": "01/05/2026", "valor": 0.58, "rotulo": "Mai/2026", "mes_nome": "Maio", "ano": 2026, "mes": 5},
+    {"data": "01/06/2026", "valor": 0.16, "rotulo": "Jun/2026", "mes_nome": "Junho", "ano": 2026, "mes": 6},
     {"data": "01/07/2026", "valor": 0.07, "rotulo": "Jul/2026", "mes_nome": "Julho", "ano": 2026, "mes": 7},
     {"data": "01/08/2026", "valor": -0.32, "rotulo": "Ago/2026", "mes_nome": "Agosto", "ano": 2026, "mes": 8},
     {"data": "01/09/2026", "valor": 0.82, "rotulo": "Set/2026", "mes_nome": "Setembro", "ano": 2026, "mes": 9},

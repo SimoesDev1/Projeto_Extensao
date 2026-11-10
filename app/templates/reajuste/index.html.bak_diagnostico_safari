@@ -1,0 +1,632 @@
+{% extends 'base.html' %}
+
+{% block title %}Reajuste de Preços (IPCA){% endblock %}
+
+{% block topbar_title %}
+    <span style="display:flex; align-items:center; gap:8px;">
+        <i class="bi bi-graph-up-arrow" style="color:var(--amber);"></i> Reajuste de Preços via IPCA
+    </span>
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 1200px; margin: 0 auto; display:flex; flex-direction:column; gap:24px;">
+
+    <!-- CABEÇALHO DA SEÇÃO -->
+    <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:16px;">
+        <div>
+            <h1 style="font-size:1.6rem; font-weight:800; color:var(--text); margin-bottom:4px;">
+                Correção Monetária de Produtos
+            </h1>
+            <p style="color:var(--text-muted); font-size:0.9rem;">
+                Envie suas tabelas em <strong>PDF</strong> ou <strong>Excel</strong> e atualize seus preços com a API oficial do <strong>Banco Central do Brasil (SGS Série 433)</strong>.
+            </p>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <a href="{{ url_for('reajuste_ipca.baixar_modelo_pdf') }}" class="btn btn-outline" style="display:inline-flex; align-items:center; gap:8px; font-weight:600; text-decoration:none;">
+                <i class="bi bi-file-earmark-pdf-fill" style="color:var(--red); font-size:1.1rem;"></i>
+                Modelo em PDF (.pdf)
+            </a>
+            <a href="{{ url_for('reajuste_ipca.baixar_modelo_excel') }}" class="btn btn-outline" style="display:inline-flex; align-items:center; gap:8px; font-weight:600; text-decoration:none;">
+                <i class="bi bi-file-earmark-excel-fill" style="color:var(--green); font-size:1.1rem;"></i>
+                Modelo em Excel (.xlsx)
+            </a>
+        </div>
+    </div>
+
+    <!-- CARDS DE INDICADORES IPCA (BACEN) -->
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap:16px;">
+
+        <!-- CARD: ÚLTIMO MÊS -->
+        <div class="card" style="padding:20px; border:1px solid var(--border); background:var(--surface); border-radius:var(--radius); position:relative; overflow:hidden;">
+            <div style="position:absolute; top:-10px; right:-10px; width:70px; height:70px; background:radial-gradient(circle, var(--amber-glow) 0%, transparent 70%);"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <span style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted); font-weight:700;">Último Mês Divulgado</span>
+                <span class="badge" style="background:rgba(251,191,36,0.15); color:var(--amber); font-weight:700; font-size:0.75rem;">
+                    {{ resumo_ipca.ultimo_mes.rotulo }}
+                </span>
+            </div>
+            <div style="display:flex; align-items:baseline; gap:8px;">
+                <span style="font-size:2rem; font-weight:800; font-family:'Outfit', sans-serif; color:var(--text);">
+                    {{ "+%.2f"|format(resumo_ipca.ultimo_mes.valor)|replace('.', ',') }}%
+                </span>
+            </div>
+            <p style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">
+                Variação mensal de {{ resumo_ipca.ultimo_mes.mes_nome }}/{{ resumo_ipca.ultimo_mes.ano }}
+            </p>
+        </div>
+
+        <!-- CARD: ACUMULADO 12 MESES -->
+        <div class="card" style="padding:20px; border:1px solid rgba(52,211,153,0.3); background:var(--surface); border-radius:var(--radius); position:relative; overflow:hidden;">
+            <div style="position:absolute; top:-10px; right:-10px; width:80px; height:80px; background:radial-gradient(circle, rgba(52,211,153,0.18) 0%, transparent 70%);"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <span style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted); font-weight:700;">Acumulado 12 Meses</span>
+                <span class="badge" style="background:rgba(52,211,153,0.15); color:var(--green); font-weight:700; font-size:0.72rem;">
+                    Mais Recomendado
+                </span>
+            </div>
+            <div style="display:flex; align-items:baseline; gap:8px;">
+                <span style="font-size:2rem; font-weight:800; font-family:'Outfit', sans-serif; color:var(--green);">
+                    {{ "+%.2f"|format(resumo_ipca.acumulado_12m)|replace('.', ',') }}%
+                </span>
+            </div>
+            <p style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">
+                Inflação acumulada nos últimos 12 meses
+            </p>
+        </div>
+
+        <!-- CARD: ACUMULADO NO ANO -->
+        <div class="card" style="padding:20px; border:1px solid var(--border); background:var(--surface); border-radius:var(--radius);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <span style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted); font-weight:700;">Acumulado em {{ resumo_ipca.ano_referencia }}</span>
+                <i class="bi bi-calendar-check" style="color:var(--indigo);"></i>
+            </div>
+            <div style="display:flex; align-items:baseline; gap:8px;">
+                <span style="font-size:2rem; font-weight:800; font-family:'Outfit', sans-serif; color:var(--text);">
+                    {{ "+%.2f"|format(resumo_ipca.acumulado_ano)|replace('.', ',') }}%
+                </span>
+            </div>
+            <p style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">
+                Janeiro até {{ resumo_ipca.ultimo_mes.rotulo }}
+            </p>
+        </div>
+
+        <!-- CARD: FONTE BACEN -->
+        <div class="card" style="padding:20px; border:1px solid var(--border); background:var(--surface); border-radius:var(--radius); display:flex; flex-direction:column; justify-content:space-between;">
+            <div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted); font-weight:700;">Origem dos Dados</span>
+                    <i class="bi bi-bank2" style="color:var(--amber);"></i>
+                </div>
+                <div style="font-weight:700; font-size:0.95rem; color:var(--text);">
+                    Banco Central (BACEN)
+                </div>
+                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">
+                    SGS Série 433 (IPCA / IBGE)
+                </div>
+            </div>
+            <div style="margin-top:12px; display:flex; align-items:center; gap:6px; font-size:0.75rem;">
+                {% if resumo_ipca.fonte == 'api_bacen' %}
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green);"></span>
+                    <span style="color:var(--green); font-weight:600;">API Conectada ao vivo</span>
+                {% elif resumo_ipca.fonte == 'cache_local' %}
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--amber);"></span>
+                    <span style="color:var(--amber); font-weight:600;">Sincronizado recentemente</span>
+                {% else %}
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--indigo);"></span>
+                    <span style="color:var(--indigo); font-weight:600;">Base oficial de referência</span>
+                {% endif %}
+            </div>
+        </div>
+
+    </div>
+
+    <!-- FORMULÁRIO DE UPLOAD E CONFIGURAÇÃO -->
+    <div class="card" style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:28px;">
+        <h2 style="font-size:1.25rem; font-weight:700; margin-bottom:6px; display:flex; align-items:center; gap:10px;">
+            <i class="bi bi-camera-fill" style="color:var(--indigo);"></i>
+            Envio da Tabela, Imagem/Print ou Planilha
+        </h2>
+        <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:24px;">
+            Envie sua tabela no formato de <strong>Imagem/Print (.png, .jpg, .jpeg)</strong>, <strong>PDF (.pdf)</strong> ou <strong>Excel (.xlsx, .xls)</strong>. O sistema extrai automaticamente os produtos e preços com OCR inteligente para correção pelo IPCA.
+        </p>
+
+        <form action="{{ url_for('reajuste_ipca.processar') }}" method="POST" enctype="multipart/form-data" id="form-reajuste">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <!-- DROPZONE DE ARQUIVO -->
+            <div id="dropzone" style="border: 2px dashed rgba(129,140,248,0.45); background:rgba(22,27,39,0.5); border-radius:var(--radius); padding:40px 24px; text-align:center; cursor:pointer; transition:all 0.3s ease; position:relative;">
+                <input type="file" name="planilha" id="input-planilha" accept=".png,.jpg,.jpeg,.webp,.pdf,.xlsx,.xls,.csv" required
+                       style="position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer;">
+
+                <div id="dropzone-empty">
+                    <div style="display:flex; justify-content:center; gap:14px; margin-bottom:16px;">
+                        <div style="width:58px; height:58px; border-radius:50%; background:rgba(129,140,248,0.18); display:inline-flex; align-items:center; justify-content:center;">
+                            <i class="bi bi-camera-fill" style="font-size:1.8rem; color:var(--indigo);"></i>
+                        </div>
+                        <div style="width:58px; height:58px; border-radius:50%; background:rgba(248,113,113,0.18); display:inline-flex; align-items:center; justify-content:center;">
+                            <i class="bi bi-file-earmark-pdf-fill" style="font-size:1.8rem; color:var(--red);"></i>
+                        </div>
+                        <div style="width:58px; height:58px; border-radius:50%; background:var(--amber-glow); display:inline-flex; align-items:center; justify-content:center;">
+                            <i class="bi bi-cloud-arrow-up-fill" style="font-size:1.8rem; color:var(--amber);"></i>
+                        </div>
+                    </div>
+                    <h3 style="font-size:1.05rem; font-weight:700; color:var(--text); margin-bottom:4px;">
+                        Clique para escolher ou arraste seu Print/Foto, PDF ou planilha aqui
+                    </h3>
+                    <p style="color:var(--text-muted); font-size:0.82rem;">
+                        Suporta <strong>Prints de tela / Imagens (.png, .jpg, .webp)</strong>, <strong>Documentos PDF (.pdf)</strong> e <strong>Excel (.xlsx)</strong>
+                    </p>
+                </div>
+
+                <div id="dropzone-file" style="display:none; align-items:center; justify-content:center; gap:12px;">
+                    <i id="icone-arquivo-selecionado" class="bi bi-camera-fill" style="font-size:2.4rem; color:var(--indigo);"></i>
+                    <div style="text-align:left;">
+                        <div id="nome-arquivo-selecionado" style="font-weight:700; font-size:1rem; color:var(--text);">arquivo.png</div>
+                        <div id="tamanho-arquivo-selecionado" style="font-size:0.8rem; color:var(--text-muted);">0 KB</div>
+                    </div>
+                    <button type="button" id="btn-remover-arquivo" class="btn btn-sm btn-outline" style="margin-left:16px;" title="Trocar arquivo">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- OPÇÕES DE REAJUSTE -->
+            <div style="margin-top:28px; display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:20px;">
+
+                <!-- MODALIDADE DO ÍNDICE -->
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label" style="display:flex; align-items:center; gap:6px; font-weight:700;">
+                        <i class="bi bi-percent" style="color:var(--amber);"></i> Índice de Correção (IPCA)
+                    </label>
+
+                    <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+                        <label style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--surface-solid); border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer;">
+                            <input type="radio" name="modalidade" value="12_meses" checked id="mod-12m">
+                            <div>
+                                <div style="font-weight:600; font-size:0.88rem; color:var(--text);">Acumulado 12 Meses (Recomendado)</div>
+                                <div style="font-size:0.76rem; color:var(--green);">Taxa: +{{ "%.2f"|format(resumo_ipca.acumulado_12m)|replace('.', ',') }}%</div>
+                            </div>
+                        </label>
+
+                        <label style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--surface-solid); border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer;">
+                            <input type="radio" name="modalidade" value="ultimo_mes" id="mod-ult">
+                            <div>
+                                <div style="font-weight:600; font-size:0.88rem; color:var(--text);">Último mês divulgado ({{ resumo_ipca.ultimo_mes.rotulo }})</div>
+                                <div style="font-size:0.76rem; color:var(--amber);">Taxa: +{{ "%.2f"|format(resumo_ipca.ultimo_mes.valor)|replace('.', ',') }}%</div>
+                            </div>
+                        </label>
+
+                        <label style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--surface-solid); border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer;">
+                            <input type="radio" name="modalidade" value="ano_atual" id="mod-ano">
+                            <div>
+                                <div style="font-weight:600; font-size:0.88rem; color:var(--text);">Acumulado no ano de {{ resumo_ipca.ano_referencia }}</div>
+                                <div style="font-size:0.76rem; color:var(--indigo);">Taxa: +{{ "%.2f"|format(resumo_ipca.acumulado_ano)|replace('.', ',') }}%</div>
+                            </div>
+                        </label>
+
+                        <label style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--surface-solid); border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer;">
+                            <input type="radio" name="modalidade" value="personalizado" id="mod-manual">
+                            <div style="flex:1;">
+                                <div style="font-weight:600; font-size:0.88rem; color:var(--text);">Índice Manual Personalizado</div>
+                                <div style="font-size:0.76rem; color:var(--text-muted);">Digite o percentual desejado</div>
+                            </div>
+                        </label>
+
+                        <div id="box-taxa-manual" style="display:none; margin-top:4px;">
+                            <input type="text" name="taxa_manual" id="taxa_manual" class="form-input" placeholder="Ex: 5.25" style="width:100%;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MARGEM ADICIONAL E ARREDONDAMENTO -->
+                <div style="display:flex; flex-direction:column; gap:16px;">
+
+                    <!-- MARGEM REAL ADICIONAL -->
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label" style="display:flex; align-items:center; gap:6px; font-weight:700;">
+                            <i class="bi bi-plus-slash-minus" style="color:var(--amber);"></i> Margem Real Adicional (%) <span style="font-size:0.75rem; font-weight:400; color:var(--text-muted);">(Opcional)</span>
+                        </label>
+                        <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:8px;">
+                            Deseja adicionar ganho real além da inflação? (ex: 2.0% para cobrir alta de embalagens ou insumos).
+                        </p>
+                        <div style="position:relative;">
+                            <input type="text" name="margem_adicional" id="margem_adicional" class="form-input" placeholder="0.0" value="0.0" style="padding-right:36px;">
+                            <span style="position:absolute; right:12px; top:50%; transform:translateY(-50%); color:var(--text-muted); font-weight:600;">%</span>
+                        </div>
+                    </div>
+
+                    <!-- REGRA DE ARREDONDAMENTO -->
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label" style="display:flex; align-items:center; gap:6px; font-weight:700;">
+                            <i class="bi bi-tag-fill" style="color:var(--amber);"></i> Estratégia de Arredondamento
+                        </label>
+                        <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:8px;">
+                            Escolha como formatar os preços finais de venda dos produtos:
+                        </p>
+                        <select name="regra_arredondamento" id="regra_arredondamento" class="form-select">
+                            <option value="padrao" selected>Padrão Matemático (2 casas exatas, ex: R$ 15,48)</option>
+                            <option value="termina_90">Terminação Comercial .90 (ex: R$ 15,90)</option>
+                            <option value="termina_99">Terminação Psicológica .99 (ex: R$ 15,99)</option>
+                            <option value="inteiro">Número Inteiro mais próximo (ex: R$ 15,00)</option>
+                        </select>
+                    </div>
+
+                    <!-- MÊS DE VIGÊNCIA DA TABELA -->
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label" for="mes_vigencia" style="display:flex; align-items:center; gap:6px; font-weight:700;">
+                            <i class="bi bi-calendar-event" style="color:var(--amber);"></i> Mês de Vigência da Tabela
+                        </label>
+                        <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:8px;">
+                            Mês em que os novos preços passam a valer. Aparece no rodapé do PDF.
+                        </p>
+                        <input type="month" name="mes_vigencia" id="mes_vigencia" class="form-input" style="width:100%; color-scheme:dark;">
+                    </div>
+
+                </div>
+
+            </div>
+
+            <!-- BOTÕES DE SUBMIT -->
+            <div style="margin-top:28px; display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:12px; padding-top:20px; border-top:1px solid var(--border);">
+                <button type="submit" id="btn-processar" class="btn btn-primary" style="padding:12px 28px; font-size:0.95rem; font-weight:700; display:inline-flex; align-items:center; gap:8px;">
+                    <i class="bi bi-lightning-charge-fill"></i>
+                    Processar e Reajustar Tabela
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- SEÇÃO DE RESULTADOS -->
+    {% if resultado %}
+    <div id="secao-resultados" class="card" style="background:var(--surface); border:1px solid rgba(52,211,153,0.3); border-radius:var(--radius); padding:28px;" data-aos="fade-up">
+
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:16px; margin-bottom:24px;">
+            <div>
+                <span class="badge" style="background:rgba(52,211,153,0.18); color:var(--green); font-size:0.8rem; font-weight:700; margin-bottom:6px; display:inline-block;">
+                    <i class="bi bi-check-circle-fill"></i> Tabela Corrigida com Sucesso
+                </span>
+                <h2 style="font-size:1.35rem; font-weight:800; color:var(--text); margin-top:4px;">
+                    Resumo do Reajuste Aplicado
+                </h2>
+                <p style="font-size:0.85rem; color:var(--text-muted);">
+                    {{ resultado.kpis.descricao_indice }} | {{ resultado.kpis.total_produtos }} produtos atualizados
+                </p>
+            </div>
+
+            <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                <a href="{{ url_for('reajuste_ipca.download_pdf', token=resultado.token) }}" class="btn btn-danger" style="padding:12px 22px; font-weight:700; font-size:0.95rem; display:inline-flex; align-items:center; gap:8px; text-decoration:none; background:#dc2626; border-color:#dc2626;">
+                    <i class="bi bi-file-earmark-pdf-fill" style="font-size:1.2rem;"></i>
+                    Baixar Tabela em PDF (.pdf)
+                </a>
+
+                <a href="{{ url_for('reajuste_ipca.download_excel', token=resultado.token) }}" class="btn btn-success" style="padding:12px 20px; font-weight:700; font-size:0.95rem; display:inline-flex; align-items:center; gap:8px; text-decoration:none;">
+                    <i class="bi bi-file-earmark-excel-fill" style="font-size:1.2rem;"></i>
+                    Baixar em Excel (.xlsx)
+                </a>
+            </div>
+        </div>
+
+        <!-- KPIs DO REAJUSTE -->
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:24px;">
+            <div style="padding:16px; background:var(--surface-solid); border-radius:var(--radius-sm); border:1px solid var(--border);">
+                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Produtos Processados</div>
+                <div style="font-size:1.6rem; font-weight:800; font-family:'Outfit', sans-serif; color:var(--text); margin-top:4px;">
+                    {{ resultado.kpis.total_produtos }}
+                </div>
+                <div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">
+                    {{ resultado.kpis.linhas_ignoradas }} linhas ignoradas/sem preço
+                </div>
+            </div>
+
+            <div style="padding:16px; background:var(--surface-solid); border-radius:var(--radius-sm); border:1px solid var(--border);">
+                <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Soma dos Preços Antigos</div>
+                <div style="font-size:1.6rem; font-weight:800; font-family:'Outfit', sans-serif; color:var(--text-muted); margin-top:4px;">
+                    R$ {{ "%.2f"|format(resultado.kpis.soma_original)|replace('.', ',') }}
+                </div>
+                <div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">
+                    Base original do documento
+                </div>
+            </div>
+
+            <div style="padding:16px; background:var(--surface-solid); border-radius:var(--radius-sm); border:1px solid rgba(52,211,153,0.3);">
+                <div style="font-size:0.75rem; color:var(--green); text-transform:uppercase; font-weight:700;">Nova Soma Corrigida</div>
+                <div style="font-size:1.6rem; font-weight:800; font-family:'Outfit', sans-serif; color:var(--green); margin-top:4px;">
+                    R$ {{ "%.2f"|format(resultado.kpis.soma_reajustada)|replace('.', ',') }}
+                </div>
+                <div style="font-size:0.72rem; color:var(--green); margin-top:2px;">
+                    +R$ {{ "%.2f"|format(resultado.kpis.aumento_total_rs)|replace('.', ',') }} de incremento
+                </div>
+            </div>
+
+            <div style="padding:16px; background:var(--surface-solid); border-radius:var(--radius-sm); border:1px solid var(--border);">
+                <div style="font-size:0.75rem; color:var(--amber); text-transform:uppercase; font-weight:700;">Variação Média</div>
+                <div style="font-size:1.6rem; font-weight:800; font-family:'Outfit', sans-serif; color:var(--amber); margin-top:4px;">
+                    +{{ "%.2f"|format(resultado.kpis.variacao_media_pct)|replace('.', ',') }}%
+                </div>
+                <div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">
+                    IPCA: {{ resultado.kpis.taxa_ipca }}% | Extra: {{ resultado.kpis.margem_adicional }}%
+                </div>
+            </div>
+        </div>
+
+        <!-- PRÉVIA DA TABELA -->
+        <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h3 style="font-size:1rem; font-weight:700; color:var(--text);">
+                    Prévia dos Produtos Atualizados (primeiros itens)
+                </h3>
+                <span style="font-size:0.78rem; color:var(--text-muted);">
+                    Coluna de preço detectada: <strong>{{ resultado.kpis.coluna_preco_utilizada }}</strong>
+                </span>
+            </div>
+
+            <div style="overflow-x:auto; border:2px solid #2c385c; border-radius:var(--radius-sm); box-shadow: 0 4px 14px rgba(0,0,0,0.25);">
+                <div style="background:#2c385c; color:#fbbf24; padding:10px 16px; font-weight:800; font-size:0.92rem; text-align:center; letter-spacing:0.5px; display:flex; justify-content:space-between; align-items:center;">
+                    <span style="color:#94a3b8; font-size:0.75rem; font-weight:600;">TABELA ANTERIOR</span>
+                    <span style="color:#fbbf24; font-weight:800; font-size:1rem; letter-spacing:1px;">FORNECEDOR DOCE COMO MEL</span>
+                    <span style="color:#94a3b8; font-size:0.75rem; font-weight:600;">TABELA CORRIGIDA (IPCA)</span>
+                </div>
+                <table class="table" style="width:100%; border-collapse:collapse; text-align:left; font-size:0.86rem; margin-bottom:0;">
+                    <thead>
+                        <tr style="background:#a0a7b4; color:#1f2937; font-weight:800; border-bottom:1px solid #374151;">
+                            <th style="padding:10px 14px; font-size:0.8rem; text-transform:uppercase; color:#111827; width:35%;">Produto</th>
+                            <th style="padding:10px 14px; font-size:0.8rem; text-transform:uppercase; text-align:right; color:#111827; width:15%; border-right:2px solid #2c385c;">Preço</th>
+                            <th style="padding:10px 14px; font-size:0.8rem; text-transform:uppercase; color:#111827; width:35%;">Produto</th>
+                            <th style="padding:10px 14px; font-size:0.8rem; text-transform:uppercase; text-align:right; color:#111827; width:15%;">Preço</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in resultado.linhas_previa %}
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
+                            <td style="padding:9px 14px; font-weight:600; color:var(--text); background:rgba(255,255,255,0.02);">
+                                {{ item.produto }}
+                                {% if item.categoria %}<span style="font-size:0.72rem; color:var(--text-muted); font-weight:400; margin-left:4px;">({{ item.categoria }})</span>{% endif %}
+                            </td>
+                            <td style="padding:9px 14px; text-align:right; color:var(--text); font-weight:700; border-right:2px solid #2c385c; background:rgba(255,255,255,0.02);">
+                                {{ item.preco_original_fmt }}
+                            </td>
+                            <td style="padding:9px 14px; font-weight:600; color:var(--text);">
+                                {{ item.produto }}
+                            </td>
+                            <td style="padding:9px 14px; text-align:right; font-weight:800; color:var(--green); font-size:0.92rem;">
+                                {{ item.novo_preco_fmt }}
+                                <span style="display:block; font-size:0.7rem; color:var(--green); font-weight:600;">
+                                    {{ item.diferenca_rs_fmt }} ({{ item.diferenca_pct_fmt }})
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr style="background:#fde68a; color:#1f2937; font-weight:700; font-size:0.8rem; border-top:2px solid #374151;">
+                            <td colspan="2" style="padding:10px 14px; color:#1f2937; border-right:2px solid #374151; vertical-align:middle;">
+                                Tabela de preços anterior
+                            </td>
+                            <td colspan="2" style="padding:10px 14px; text-align:right; color:#1f2937; vertical-align:middle; line-height:1.4;">
+                                Tabela de preços atualizada com base no IPCA oficial<br/>
+                                <span style="font-size:0.75rem; color:#4b5563;">Variação acumulada: +{{ resultado.kpis.taxa_ipca }}% {% if resultado.kpis.margem_adicional > 0 %}(+{{ resultado.kpis.margem_adicional }}% adicional){% endif %}</span>
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <!-- BOTÕES DE DOWNLOAD AO FINAL DA PRÉVIA -->
+            <div style="margin-top:20px; display:flex; justify-content:center; gap:16px; flex-wrap:wrap;">
+                <a href="{{ url_for('reajuste_ipca.download_pdf', token=resultado.token) }}" class="btn btn-danger" style="padding:10px 24px; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:8px; background:#dc2626; border-color:#dc2626;">
+                    <i class="bi bi-file-earmark-pdf-fill"></i> Baixar Tabela em PDF (.pdf)
+                </a>
+                <a href="{{ url_for('reajuste_ipca.download_excel', token=resultado.token) }}" class="btn btn-success" style="padding:10px 22px; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:8px;">
+                    <i class="bi bi-file-earmark-excel-fill"></i> Baixar Planilha em Excel (.xlsx)
+                </a>
+            </div>
+        </div>
+
+    </div>
+    {% endif %}
+
+    <!-- GUIA DE USO E PERGUNTAS FREQUENTES -->
+    <div class="card" style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:24px;">
+        <h3 style="font-size:1.05rem; font-weight:700; margin-bottom:12px; display:flex; align-items:center; gap:8px;">
+            <i class="bi bi-info-circle-fill" style="color:var(--amber);"></i> Como funciona a leitura e exportação?
+        </h3>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; font-size:0.85rem; color:var(--text-muted); line-height:1.6;">
+            <div>
+                <strong style="color:var(--text);"><i class="bi bi-camera-fill" style="color:var(--indigo);"></i> 1. OCR Inteligente para Prints e Fotos</strong><br>
+                Tirou print da tabela do WhatsApp ou foto da lista impressa? Nosso sistema realiza OCR local de alta precisão, reconhece automaticamente os produtos e preços em segundos.
+            </div>
+            <div>
+                <strong style="color:var(--text);"><i class="bi bi-file-earmark-pdf-fill" style="color:var(--red);"></i> 2. Leitura de PDFs e Planilhas</strong><br>
+                Também suporta documentos PDF e planilhas Excel (.xlsx, .xls, .csv). O algoritmo identifica colunas de códigos, produtos, categorias e valores automaticamente.
+            </div>
+            <div>
+                <strong style="color:var(--text);"><i class="bi bi-file-earmark-diff-fill" style="color:var(--amber);"></i> 3. Devolução em PDF Espelho Executivo</strong><br>
+                Ao final, você baixa um PDF comparativo lado a lado no padrão visual solicitado (Tabela Anterior vs Tabela Corrigida pelo IPCA com vigência atualizada).
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const inputPlanilha = document.getElementById('input-planilha');
+    const dropzone = document.getElementById('dropzone');
+    const dropzoneEmpty = document.getElementById('dropzone-empty');
+    const dropzoneFile = document.getElementById('dropzone-file');
+    const nomeArquivo = document.getElementById('nome-arquivo-selecionado');
+    const tamanhoArquivo = document.getElementById('tamanho-arquivo-selecionado');
+    const iconeArquivo = document.getElementById('icone-arquivo-selecionado');
+    const btnRemover = document.getElementById('btn-remover-arquivo');
+
+    const modManual = document.getElementById('mod-manual');
+    const boxTaxaManual = document.getElementById('box-taxa-manual');
+    const formReajuste = document.getElementById('form-reajuste');
+    const btnProcessar = document.getElementById('btn-processar');
+
+    // Mês de vigência: já vem preenchido com o mês atual
+    const inputMes = document.getElementById('mes_vigencia');
+
+    if (inputMes && !inputMes.value) {
+        const hoje = new Date();
+        inputMes.value =
+            hoje.getFullYear() + '-' +
+            String(hoje.getMonth() + 1).padStart(2, '0');
+    }
+
+    // Eventos visuais de drag and drop
+    ['dragenter', 'dragover'].forEach(evt => {
+        dropzone.addEventListener(evt, function(e) {
+            e.preventDefault();
+            dropzone.style.borderColor = 'var(--red)';
+            dropzone.style.background = 'rgba(248,113,113,0.08)';
+        });
+    });
+
+    ['dragleave', 'drop'].forEach(evt => {
+        dropzone.addEventListener(evt, function(e) {
+            e.preventDefault();
+            dropzone.style.borderColor = 'rgba(248,113,113,0.4)';
+            dropzone.style.background = 'rgba(22,27,39,0.5)';
+        });
+    });
+
+    // Seleção de arquivo
+    inputPlanilha.addEventListener('change', function() {
+        if (this.files && this.files[0]) {
+            const f = this.files[0];
+
+            nomeArquivo.textContent = f.name;
+            tamanhoArquivo.textContent =
+                (f.size / 1024).toFixed(1) + ' KB';
+
+            const nameLower = f.name.toLowerCase();
+
+            if (nameLower.endsWith('.pdf')) {
+                iconeArquivo.className =
+                    'bi bi-file-earmark-pdf-fill';
+                iconeArquivo.style.color = 'var(--red)';
+
+            } else if (
+                nameLower.endsWith('.png') ||
+                nameLower.endsWith('.jpg') ||
+                nameLower.endsWith('.jpeg') ||
+                nameLower.endsWith('.webp')
+            ) {
+                iconeArquivo.className = 'bi bi-camera-fill';
+                iconeArquivo.style.color = 'var(--indigo)';
+
+            } else {
+                iconeArquivo.className =
+                    'bi bi-file-earmark-excel-fill';
+                iconeArquivo.style.color = 'var(--green)';
+            }
+
+            dropzoneEmpty.style.display = 'none';
+            dropzoneFile.style.display = 'flex';
+        } else {
+            dropzoneEmpty.style.display = 'block';
+            dropzoneFile.style.display = 'none';
+        }
+    });
+
+    // Remover arquivo selecionado
+    btnRemover.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        inputPlanilha.value = '';
+
+        dropzoneEmpty.style.display = 'block';
+        dropzoneFile.style.display = 'none';
+    });
+
+    // Toggle da taxa manual
+    document.querySelectorAll('input[name="modalidade"]').forEach(r => {
+        r.addEventListener('change', function() {
+            if (modManual.checked) {
+                boxTaxaManual.style.display = 'block';
+
+                const taxaManual =
+                    document.getElementById('taxa_manual');
+
+                if (taxaManual) {
+                    taxaManual.focus();
+                }
+            } else {
+                boxTaxaManual.style.display = 'none';
+            }
+        });
+    });
+
+    // Restaura o botão e esconde o carregamento
+    function pararLoading() {
+        btnProcessar.disabled = false;
+
+        btnProcessar.innerHTML =
+            btnProcessar.dataset.textoOriginal ||
+            '<i class="bi bi-lightning-charge-fill"></i> Processar e Reajustar Tabela';
+
+        const spinner =
+            document.getElementById('page-spinner');
+
+        if (spinner) {
+            spinner.style.display = 'none';
+        }
+    }
+
+    // ENVIO NATIVO DO FORMULÁRIO
+    // Não utiliza createImageBitmap, DataTransfer, File ou fetch.
+    // O próprio Safari envia o arquivo diretamente ao Flask.
+    formReajuste.addEventListener('submit', function(e) {
+
+        // Verifica se existe arquivo selecionado
+        if (!inputPlanilha.files || !inputPlanilha.files[0]) {
+            e.preventDefault();
+
+            alert(
+                'Por favor, selecione uma imagem/print, documento PDF ou planilha antes de processar.'
+            );
+
+            return;
+        }
+
+        // Guarda o texto original do botão
+        btnProcessar.dataset.textoOriginal =
+            btnProcessar.innerHTML;
+
+        // Evita cliques duplicados
+        btnProcessar.disabled = true;
+
+        // Atualiza o botão
+        btnProcessar.innerHTML =
+            '<i class="bi bi-arrow-repeat spin"></i> Processando documento com OCR e IPCA...';
+
+        // Exibe o carregamento global, se existir
+        const spinner =
+            document.getElementById('page-spinner');
+
+        if (spinner) {
+            spinner.style.display = 'flex';
+        }
+
+        /*
+         * IMPORTANTE:
+         * Não chamar e.preventDefault() aqui.
+         * Não chamar fetch().
+         * Não chamar HTMLFormElement.prototype.submit().
+         *
+         * O navegador continuará com o envio nativo do formulário,
+         * enviando o arquivo e seguindo o redirect do Flask.
+         */
+    });
+
+    // Restaura a interface quando a página é carregada
+    // ou recuperada pelo histórico do Safari.
+    window.addEventListener('pageshow', function() {
+        pararLoading();
+    });
+
+});
+</script>
+{% endblock %}

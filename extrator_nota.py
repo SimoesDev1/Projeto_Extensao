@@ -310,6 +310,11 @@ def extrair_dados_imagem_ocr(image_bytes: bytes) -> dict[str, Any]:
 
     texto_completo = _imagem_bytes_para_texto_ocr(image_bytes)
 
+    # Diagn?stico tempor?rio: somente linhas relacionadas ao pagamento.
+    for linha_ocr in texto_completo.splitlines():
+        if re.search(r"VENDA|CREDITO|CR[E?]DITO|DOC|TED|TEF|TRANSFER", linha_ocr, re.IGNORECASE):
+            logger.info("OCR | Linha de pagamento: %s", linha_ocr[:180])
+
     if not texto_completo.strip():
         logger.warning(
             "EXTRATOR | extrair_dados_imagem_ocr | OCR sem texto | %.1fs",
@@ -429,6 +434,17 @@ def _extrair_de_texto(
 
     fornecedor = ""
 
+    # Comprovantes Pix: prioriza o nome de quem recebeu a transfer?ncia.
+    m_recebedor = re.search(
+        r"DADOS DE QUEM RECEBEU\s*[:\-]?\s*.*?NOME\s*:\s*([^\n\r]+)",
+        texto_completo,
+        re.IGNORECASE | re.DOTALL
+    )
+
+    if m_recebedor:
+        fornecedor = m_recebedor.group(1).strip()
+
+
     # Casos DANFE / NF-e:
     # "RECEBEMOS DE <NOME>" ou "EMITENTE: <NOME>" ou "RAZÃO SOCIAL"
 
@@ -518,9 +534,17 @@ def _extrair_de_texto(
                     re.IGNORECASE
                 )
                 for l in linhas[:7]:
-                    if not _skip.search(l) and len(l) > 3:
-                        fornecedor = l
-                        break
+                   candidato = l.strip()
+
+                   if (
+                       len(candidato) > 3
+                       and not _skip.search(candidato)
+                       and not re.search(r"\\d{2}[/.-]\\d{2}[/.-]\\d{4}", candidato)
+                       and not re.search(r"\\d{1,2}:\\d{2}", candidato)
+                       and not re.fullmatch(r"[\\d\\s.,/:-]+", candidato)
+                   ):
+                       fornecedor = candidato
+                       break
 
     # ========================================================
     # 2. IDENTIFICAR DATA
@@ -562,49 +586,60 @@ def _extrair_de_texto(
 
     t_upper = texto_completo.upper()
 
-    # Prioridade 1 — PIX (palavra isolada ou contexto de pagamento)
-    if re.search(
-        r"(?:PAGAMENTO\s+(?:VIA\s+)?PIX|CHAVE\s+PIX|\bPIX\b)",
-        t_upper
-    ):
+    # Normaliza acentos para evitar problemas de codifica??o e OCR.
+    import unicodedata
+
+    t_norm = "".join(
+        caractere
+        for caractere in unicodedata.normalize("NFD", t_upper)
+        if unicodedata.category(caractere) != "Mn"
+    )
+
+    # Prioridade 1: Pix
+    if re.search(r"\bPIX\b|PAGAMENTO\s+(?:VIA\s+)?PIX|CHAVE\s+PIX", t_norm):
         forma_pagamento = "Pix"
 
-    # Prioridade 2 — Cartão de Crédito (exige palavra CART + CRÉD juntas,
-    #                ou parcelamento explícito em cartão)
+    # Prioridade 2: Cart?o de cr?dito
     elif re.search(
-        r"CART[AÃ]O\s+(?:DE\s+)?CR[EÉ]DITO"
-        r"|CR[EÉ]DITO\s+EM\s+\d+\s*[xX]"
-        r"|COMPRA\s+CR[EÉ]DITO"
-        r"|CREDITO\s+PARCELADO",
-        t_upper
+        r"CARTAO\s+(?:DE\s+)?CREDITO"
+        r"|CREDITO\s+EM\s+\d+\s*[Xx]"
+        r"|COMPRA\s+CREDITO"
+        r"|CREDITO\s+PARCELADO"
+        r"|VENDA\s*A?\s*CREDITO",
+        t_norm
     ):
-        forma_pagamento = "Cartão de Crédito"
+        forma_pagamento = "Cart\u00e3o de Cr\u00e9dito"
 
-    # Prioridade 3 — Cartão de Débito
+    # Prioridade 3: Cart?o de d?bito
     elif re.search(
-        r"CART[AÃ]O\s+(?:DE\s+)?D[EÉ]BITO"
-        r"|D[EÉ]BITO\s+(?:EM\s+CONTA|AUTOM[AÁ]TICO|CONTA)"
-        r"|COMPRA\s+D[EÉ]BITO",
-        t_upper
+        r"CARTAO\s+(?:DE\s+)?DEBITO"
+        r"|DEBITO\s+(?:EM\s+CONTA|AUTOMATICO|CONTA)"
+        r"|COMPRA\s+DEBITO",
+        t_norm
     ):
-        forma_pagamento = "Cartão de Débito"
+        forma_pagamento = "Cart\u00e3o de D\u00e9bito"
 
-    # Prioridade 4 — Dinheiro / espécie
-    elif re.search(r"\bDINHEIRO\b|\bESP[EÉ]CIE\b|PAGAMENTO\s+EM\s+DINHEIRO", t_upper):
+    # Prioridade 4: Dinheiro
+    elif re.search(
+        r"\bDINHEIRO\b|\bESPECIE\b|PAGAMENTO\s+EM\s+DINHEIRO",
+        t_norm
+    ):
         forma_pagamento = "Dinheiro"
 
-    # Prioridade 5 — Transferência (TED/DOC como palavra isolada)
+    # Prioridade 5: Transfer?ncia
+    # DOC foi removido para n?o confundir c?digos como DOC=100000.
     elif re.search(
-        r"\bTRANSFER[EÊ]NCIA\b|\bTED\b|\bDOC\b|\bTEF\b",
-        t_upper
+        r"\bTRANSFERENCIA\b|\bTED\b|\bTEF\b",
+        t_norm
     ):
-        forma_pagamento = "Transferência"
+        forma_pagamento = "Transfer\u00eancia"
 
-    # Prioridade 6 — Boleto → mapeado para "Pix" (valor válido mais próximo)
-    elif re.search(r"\bBOLETO\b|LINHA\s+DIGIT[AÁ]VEL|C[OÓ]DIGO\s+DE\s+BARRAS", t_upper):
+    # Prioridade 6: Boleto (mant?m o comportamento anterior)
+    elif re.search(
+        r"\bBOLETO\b|LINHA\s+DIGITAVEL|CODIGO\s+DE\s+BARRAS",
+        t_norm
+    ):
         forma_pagamento = "Pix"
-
-    # Sem contexto suficiente → deixa vazio (usuário preenche)
 
     logger.debug("EXTRATOR | forma_pagamento detectada: '%s'", forma_pagamento)
 

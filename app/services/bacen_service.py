@@ -1,39 +1,41 @@
-
 import json
 import logging
 import math
 import os
-import tempfile
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 import requests
 from requests.adapters import HTTPAdapter
+from sqlalchemy import text
 from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
 # Série 433: IPCA - Variação mensal (%) do SGS / Banco Central do Brasil
 BCB_SERIE_IPCA_MENSAL = 433
-BCB_API_URL = (
-    f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{BCB_SERIE_IPCA_MENSAL}"
-    f"/dados/ultimos/12?formato=json"
+BCB_BASE_URL = (
+    f"https://api.bcb.gov.br/dados/serie/"
+    f"bcdata.sgs.{BCB_SERIE_IPCA_MENSAL}/dados"
 )
 
 BCB_TIMEOUT = (3, 6)
 QTD_MESES_HISTORICO = 12
 
-# Cache local de 24 horas
+# Cache de 24 horas (memória e banco)
 CACHE_TTL_SEGUNDOS = int(
     os.getenv("IPCA_CACHE_TTL", str(24 * 3600))
 )
 
-# Caminho do cache em disco
-BASE_DIR = os.path.dirname(
-    os.path.dirname(os.path.dirname(__file__))
-)
-CACHE_FILE = os.path.join(BASE_DIR, "db", "ipca_cache.json")
+# O cache persistente fica no Neon (Postgres), na tabela ipca_cache:
+#
+#   CREATE TABLE IF NOT EXISTS ipca_cache (
+#       id              SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+#       timestamp_epoch DOUBLE PRECISION NOT NULL,
+#       atualizado_em   TEXT,
+#       historico       JSONB NOT NULL
+#   );
 
 MODALIDADES_VALIDAS = (
     "ultimo_mes",
@@ -65,102 +67,18 @@ NOMES_MESES = {
 # Os valores precisam ser conferidos contra a série oficial.
 # Por padrão, o reajuste não utiliza esta base.
 FALLBACK_HISTORICO = [
-    {
-        "data": "01/10/2025",
-        "valor": 0.24,
-        "rotulo": "Out/2025",
-        "mes_nome": "Outubro",
-        "ano": 2025,
-        "mes": 10,
-    },
-    {
-        "data": "01/11/2025",
-        "valor": 0.28,
-        "rotulo": "Nov/2025",
-        "mes_nome": "Novembro",
-        "ano": 2025,
-        "mes": 11,
-    },
-    {
-        "data": "01/12/2025",
-        "valor": 0.56,
-        "rotulo": "Dez/2025",
-        "mes_nome": "Dezembro",
-        "ano": 2025,
-        "mes": 12,
-    },
-    {
-        "data": "01/01/2026",
-        "valor": 0.42,
-        "rotulo": "Jan/2026",
-        "mes_nome": "Janeiro",
-        "ano": 2026,
-        "mes": 1,
-    },
-    {
-        "data": "01/02/2026",
-        "valor": 0.83,
-        "rotulo": "Fev/2026",
-        "mes_nome": "Fevereiro",
-        "ano": 2026,
-        "mes": 2,
-    },
-    {
-        "data": "01/03/2026",
-        "valor": 0.16,
-        "rotulo": "Mar/2026",
-        "mes_nome": "Março",
-        "ano": 2026,
-        "mes": 3,
-    },
-    {
-        "data": "01/04/2026",
-        "valor": 0.38,
-        "rotulo": "Abr/2026",
-        "mes_nome": "Abril",
-        "ano": 2026,
-        "mes": 4,
-    },
-    {
-        "data": "01/05/2026",
-        "valor": 0.46,
-        "rotulo": "Mai/2026",
-        "mes_nome": "Maio",
-        "ano": 2026,
-        "mes": 5,
-    },
-    {
-        "data": "01/06/2026",
-        "valor": 0.21,
-        "rotulo": "Jun/2026",
-        "mes_nome": "Junho",
-        "ano": 2026,
-        "mes": 6,
-    },
-    {
-        "data": "01/07/2026",
-        "valor": 0.07,
-        "rotulo": "Jul/2026",
-        "mes_nome": "Julho",
-        "ano": 2026,
-        "mes": 7,
-    },
-    {
-        "data": "01/08/2026",
-        "valor": -0.32,
-        "rotulo": "Ago/2026",
-        "mes_nome": "Agosto",
-        "ano": 2026,
-        "mes": 8,
-    },
-    {
-        "data": "01/09/2026",
-        "valor": 0.82,
-        "rotulo": "Set/2026",
-        "mes_nome": "Setembro",
-        "ano": 2026,
-        "mes": 9,
-    },
+    {"data": "01/10/2025", "valor": 0.24, "rotulo": "Out/2025", "mes_nome": "Outubro", "ano": 2025, "mes": 10},
+    {"data": "01/11/2025", "valor": 0.28, "rotulo": "Nov/2025", "mes_nome": "Novembro", "ano": 2025, "mes": 11},
+    {"data": "01/12/2025", "valor": 0.56, "rotulo": "Dez/2025", "mes_nome": "Dezembro", "ano": 2025, "mes": 12},
+    {"data": "01/01/2026", "valor": 0.42, "rotulo": "Jan/2026", "mes_nome": "Janeiro", "ano": 2026, "mes": 1},
+    {"data": "01/02/2026", "valor": 0.83, "rotulo": "Fev/2026", "mes_nome": "Fevereiro", "ano": 2026, "mes": 2},
+    {"data": "01/03/2026", "valor": 0.16, "rotulo": "Mar/2026", "mes_nome": "Março", "ano": 2026, "mes": 3},
+    {"data": "01/04/2026", "valor": 0.38, "rotulo": "Abr/2026", "mes_nome": "Abril", "ano": 2026, "mes": 4},
+    {"data": "01/05/2026", "valor": 0.46, "rotulo": "Mai/2026", "mes_nome": "Maio", "ano": 2026, "mes": 5},
+    {"data": "01/06/2026", "valor": 0.21, "rotulo": "Jun/2026", "mes_nome": "Junho", "ano": 2026, "mes": 6},
+    {"data": "01/07/2026", "valor": 0.07, "rotulo": "Jul/2026", "mes_nome": "Julho", "ano": 2026, "mes": 7},
+    {"data": "01/08/2026", "valor": -0.32, "rotulo": "Ago/2026", "mes_nome": "Agosto", "ano": 2026, "mes": 8},
+    {"data": "01/09/2026", "valor": 0.82, "rotulo": "Set/2026", "mes_nome": "Setembro", "ano": 2026, "mes": 9},
 ]
 
 _CHAVES_ITEM = (
@@ -185,6 +103,16 @@ def _arredondar(valor: Decimal, casas: int) -> Decimal:
     )
 
 
+def _engine():
+    """Engine do banco (Neon). Import tardio evita import circular.
+
+    AJUSTE o import abaixo conforme o seu projeto.
+    """
+    from app import db
+
+    return db.engine
+
+
 def _criar_sessao() -> requests.Session:
     sessao = requests.Session()
 
@@ -206,13 +134,38 @@ def _criar_sessao() -> requests.Session:
 
     sessao.headers.update({
         "Accept": "application/json",
-        "User-Agent": "reajuste-ipca/1.0",
-        "Cache-Control": "no-cache, no-store, max-age=0",
-        "Pragma": "no-cache",
-        "Expires": "0",
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+        ),
+        "Cache-Control": "no-cache",
     })
 
     return sessao
+
+
+def _variacoes_consulta() -> list[tuple[str, dict]]:
+    """Três formas diferentes de pedir o mesmo dado ao BACEN."""
+    hoje = datetime.now()
+    inicio = hoje - timedelta(days=550)  # folga p/ garantir 12 meses
+
+    intervalo = {
+        "formato": "json",
+        "dataInicial": inicio.strftime("%d/%m/%Y"),
+        "dataFinal": hoje.strftime("%d/%m/%Y"),
+    }
+
+    return [
+        # 1. URL canônica, sem parâmetros extras
+        (
+            f"{BCB_BASE_URL}/ultimos/{QTD_MESES_HISTORICO}",
+            {"formato": "json"},
+        ),
+        # 2. Endpoint por intervalo de datas
+        (BCB_BASE_URL, intervalo),
+        # 3. Intervalo + cache-buster
+        (BCB_BASE_URL, {**intervalo, "_": str(time.time_ns())}),
+    ]
 
 
 class BacenService:
@@ -349,39 +302,38 @@ class BacenService:
         return ordenado
 
     # --------------------------------------------------------------
-    # Cache em disco
+    # Cache persistente (Neon / Postgres)
     # --------------------------------------------------------------
 
     @classmethod
     def _carregar_cache_disco(cls) -> dict | None:
-        """Lê o cache e só o devolve se o histórico estiver íntegro."""
+        """Lê o cache do Neon e só o devolve se o histórico estiver íntegro."""
 
         try:
-            if not os.path.isfile(CACHE_FILE):
-                return None
+            with _engine().connect() as conn:
+                linha = conn.execute(
+                    text(
+                        "SELECT timestamp_epoch, atualizado_em, historico "
+                        "FROM ipca_cache WHERE id = 1"
+                    )
+                ).mappings().first()
 
-            with open(
-                CACHE_FILE,
-                "r",
-                encoding="utf-8",
-            ) as arquivo:
-                bruto = json.load(arquivo)
-
-            if not isinstance(bruto, dict):
+            if not linha:
                 return None
 
             historico = cls._validar_historico(
-                bruto.get("historico")
+                linha["historico"]
             )
 
             if historico is None:
                 logger.warning(
-                    "Cache do IPCA incompleto ou corrompido. Ignorando."
+                    "Cache do IPCA no banco incompleto ou corrompido. "
+                    "Ignorando."
                 )
                 return None
 
             timestamp = float(
-                bruto.get("timestamp", 0) or 0
+                linha["timestamp_epoch"] or 0
             )
 
             if not math.isfinite(timestamp):
@@ -389,63 +341,51 @@ class BacenService:
 
             return {
                 "timestamp": timestamp,
-                "atualizado_em": bruto.get("atualizado_em"),
+                "atualizado_em": linha["atualizado_em"],
                 "historico": historico,
             }
 
         except Exception as erro:
             logger.warning(
-                "Não foi possível ler cache do IPCA em disco: %s",
+                "Não foi possível ler cache do IPCA no banco: %s",
                 erro,
             )
             return None
 
     @classmethod
     def _salvar_cache_disco(cls, dados: dict) -> None:
-        """Gravação atômica para evitar arquivo incompleto."""
-
-        tmp_path = None
+        """Upsert atômico da única linha de cache."""
 
         try:
-            pasta = os.path.dirname(CACHE_FILE)
-            os.makedirs(pasta, exist_ok=True)
-
-            fd, tmp_path = tempfile.mkstemp(
-                dir=pasta,
-                suffix=".tmp",
-            )
-
-            with os.fdopen(
-                fd,
-                "w",
-                encoding="utf-8",
-            ) as arquivo:
-                json.dump(
-                    dados,
-                    arquivo,
-                    ensure_ascii=False,
-                    indent=2,
+            with _engine().begin() as conn:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO ipca_cache
+                            (id, timestamp_epoch, atualizado_em, historico)
+                        VALUES
+                            (1, :ts, :atualizado, CAST(:historico AS JSONB))
+                        ON CONFLICT (id) DO UPDATE SET
+                            timestamp_epoch = EXCLUDED.timestamp_epoch,
+                            atualizado_em   = EXCLUDED.atualizado_em,
+                            historico       = EXCLUDED.historico
+                        """
+                    ),
+                    {
+                        "ts": dados["timestamp"],
+                        "atualizado": dados.get("atualizado_em"),
+                        "historico": json.dumps(
+                            dados["historico"],
+                            ensure_ascii=False,
+                        ),
+                    },
                 )
-
-            os.replace(
-                tmp_path,
-                CACHE_FILE,
-            )
-
-            tmp_path = None
 
         except Exception as erro:
             logger.warning(
-                "Não foi possível gravar cache do IPCA em disco: %s",
+                "Não foi possível gravar cache do IPCA no banco: %s",
                 erro,
             )
-
-        finally:
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
 
     # --------------------------------------------------------------
     # Consulta à API
@@ -461,28 +401,16 @@ class BacenService:
         )
 
         dados = None
+        variacoes = _variacoes_consulta()
 
-        with _criar_sessao() as sessao:
+        for tentativa, (url, params) in enumerate(variacoes, start=1):
 
-            for tentativa in range(1, 3):
-
-                # Parâmetro variável para evitar cache intermediário.
-                parametros = {
-                    "_": str(time.time_ns())
-                }
-
-                if tentativa == 2:
-                    sessao.cookies.clear()
-
-                    logger.warning(
-                        "IPCA | Nova tentativa com sessão limpa "
-                        "e URL diferenciada."
-                    )
-
+            # Sessão nova a cada tentativa: nada reaproveitado.
+            with _criar_sessao() as sessao:
                 try:
                     with sessao.get(
-                        BCB_API_URL,
-                        params=parametros,
+                        url,
+                        params=params,
                         timeout=BCB_TIMEOUT,
                     ) as resposta:
 
@@ -496,19 +424,29 @@ class BacenService:
                         )
 
                         if resposta.status_code == 304:
+                            # Diagnóstico: quem respondeu e o que enviamos?
                             logger.warning(
-                                "IPCA | BACEN retornou HTTP 304 "
-                                "na tentativa %s.",
+                                "IPCA | 304 na tentativa %s | url=%s | "
+                                "req_condicional=%s | server=%s | via=%s | "
+                                "age=%s | etag=%s | x-cache=%s",
                                 tentativa,
+                                resposta.url,
+                                [
+                                    h
+                                    for h in resposta.request.headers
+                                    if h.lower().startswith("if-")
+                                ],
+                                resposta.headers.get("Server"),
+                                resposta.headers.get("Via"),
+                                resposta.headers.get("Age"),
+                                resposta.headers.get("ETag"),
+                                resposta.headers.get("X-Cache"),
                             )
                             continue
 
                         resposta.raise_for_status()
 
-                        if (
-                            not resposta.content
-                            or not resposta.text.strip()
-                        ):
+                        if not resposta.text.strip():
                             raise ValueError(
                                 "O Banco Central retornou uma resposta vazia."
                             )
@@ -536,7 +474,7 @@ class BacenService:
                         tentativa,
                     )
 
-                    if tentativa == 2:
+                    if tentativa == len(variacoes):
                         raise
 
         if dados is None:
@@ -600,7 +538,7 @@ class BacenService:
         Retorna (historico, fonte, atualizado_em).
 
         Utiliza cache recente quando disponível.
-        Se a API falhar, utiliza o cache válido antes da referência.
+        Se a API falhar, utiliza o cache válido, mesmo vencido.
         """
 
         agora = time.time()
@@ -627,7 +565,7 @@ class BacenService:
                     cls._MEM_CACHE["atualizado_em"],
                 )
 
-            # 2. Cache em disco
+            # 2. Cache no banco
             cache = cls._carregar_cache_disco()
 
             if (
@@ -640,7 +578,7 @@ class BacenService:
                 cls._MEM_CACHE = cache
 
                 logger.info(
-                    "IPCA | Usando cache em disco recente (%s).",
+                    "IPCA | Usando cache do banco recente (%s).",
                     cache.get("atualizado_em"),
                 )
 

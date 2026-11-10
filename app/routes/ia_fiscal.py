@@ -1,6 +1,7 @@
-
 import logging
 import os
+import threading
+import time
 import uuid
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -9,6 +10,7 @@ from flask import (
     Blueprint,
     abort,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -49,6 +51,19 @@ TMP_IA_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
     "tmp_ia"
 )
+
+# ----------------------------------------------------------------------
+# Processamento em segundo plano
+#
+# O estado dos jobs fica em memória. Isso funciona porque o app roda com
+# um único worker do gunicorn (--workers 1). Com mais de um worker, os
+# jobs precisariam ser guardados no banco ou no Redis.
+# ----------------------------------------------------------------------
+_JOBS: dict[str, dict] = {}
+_JOBS_LOCK = threading.Lock()
+
+JOB_TTL_SEGUNDOS = 900          # remove jobs após 15 minutos
+JOB_ATIVO_MAX_SEGUNDOS = 120    # bloqueia novo envio enquanto há um em curso
 
 
 def _ensure_tmp_dir() -> None:
@@ -131,6 +146,88 @@ def _obter_data_formulario() -> date | None:
         return None
 
 
+def _limpar_jobs_antigos() -> None:
+    limite = time.time() - JOB_TTL_SEGUNDOS
+
+    with _JOBS_LOCK:
+        for job_id in [
+            j for j, v in _JOBS.items() if v["criado"] < limite
+        ]:
+            _JOBS.pop(job_id, None)
+
+
+def _usuario_tem_job_ativo(id_usuario) -> bool:
+    limite = time.time() - JOB_ATIVO_MAX_SEGUNDOS
+
+    with _JOBS_LOCK:
+        return any(
+            v["usuario"] == id_usuario
+            and v["status"] == "processando"
+            and v["criado"] >= limite
+            for v in _JOBS.values()
+        )
+
+
+def _executar_job(
+    job_id: str,
+    file_bytes: bytes,
+    mimetype: str,
+    ext: str,
+    filename: str,
+    origem: str,
+    cat_nomes: list[str],
+) -> None:
+    """
+    Roda fora da requisição. Não pode usar session, request nem flash:
+    o resultado é entregue pela rota /ia/status.
+    """
+    try:
+        resultado = AiFiscalService.interpretar_documento(
+            file_bytes,
+            mimetype,
+            cat_nomes
+        )
+
+        if not isinstance(resultado, dict):
+            raise ValueError("O serviço de leitura retornou dados inválidos.")
+
+        _ensure_tmp_dir()
+
+        token = str(uuid.uuid4())
+
+        with open(_preview_path(token, ext), "wb") as arquivo:
+            arquivo.write(file_bytes)
+
+        novo_estado = {
+            "status": "ok",
+            "preview": {
+                "dados": resultado,
+                "file_token": token,
+                "ext": ext,
+                "mimetype": mimetype,
+                "filename": os.path.basename(filename),
+                "origem": origem,
+            },
+        }
+
+    except Exception:
+        logger.exception(
+            "Erro ao processar documento fiscal (job %s).", job_id
+        )
+        novo_estado = {
+            "status": "erro",
+            "msg": "Não foi possível processar o arquivo enviado.",
+        }
+
+    with _JOBS_LOCK:
+        if job_id in _JOBS:
+            _JOBS[job_id].update(novo_estado)
+
+
+def _json_erro(msg: str, codigo: int = 400):
+    return jsonify(status="erro", msg=msg), codigo
+
+
 @ia_fiscal_bp.route("/")
 @login_required
 def upload():
@@ -145,22 +242,19 @@ def upload():
 @ia_fiscal_bp.route("/processar", methods=["POST"])
 @login_required
 def processar():
-    if "documento" not in request.files:
-        flash("Nenhum arquivo enviado.", "danger")
-        return redirect(url_for("ia_fiscal.upload"))
+    """
+    Valida o arquivo e inicia a leitura em segundo plano.
+    Responde na hora com um job_id; a página consulta /ia/status/<job_id>.
+    """
+    file = request.files.get("documento")
 
-    file = request.files["documento"]
-
-    if not file.filename:
-        flash("Selecione um arquivo de imagem ou PDF.", "danger")
-        return redirect(url_for("ia_fiscal.upload"))
+    if not file or not file.filename:
+        return _json_erro("Selecione um arquivo de imagem ou PDF.")
 
     if not allowed_file(file.filename):
-        flash(
-            "Formato não suportado. Envie PNG, JPG, JPEG, WEBP ou PDF.",
-            "danger"
+        return _json_erro(
+            "Formato não suportado. Envie PNG, JPG, JPEG, WEBP ou PDF."
         )
-        return redirect(url_for("ia_fiscal.upload"))
 
     ext = file.filename.rsplit(".", 1)[1].lower()
     file_bytes = file.read()
@@ -173,12 +267,10 @@ def processar():
     )
 
     if not file_bytes:
-        flash("O arquivo enviado está vazio.", "danger")
-        return redirect(url_for("ia_fiscal.upload"))
+        return _json_erro("O arquivo enviado está vazio.")
 
     if len(file_bytes) > 10 * 1024 * 1024:
-        flash("Arquivo muito grande (máximo 10 MB).", "danger")
-        return redirect(url_for("ia_fiscal.upload"))
+        return _json_erro("Arquivo muito grande (máximo 10 MB).")
 
     mimetypes = {
         "pdf": "application/pdf",
@@ -189,57 +281,104 @@ def processar():
     }
     mimetype = mimetypes[ext]
 
-    try:
-        categorias = CategoriaService.listar_todas()
-        cat_nomes = [c.nome_categoria for c in categorias]
+    id_usuario = session.get("id_usuario")
 
-        resultado = AiFiscalService.interpretar_documento(
-            file_bytes,
-            mimetype,
-            cat_nomes
+    _limpar_jobs_antigos()
+
+    # Evita empilhar leituras: o OCR é compartilhado e novas tentativas
+    # só ficariam esperando na fila.
+    if _usuario_tem_job_ativo(id_usuario):
+        return _json_erro(
+            "Já existe uma leitura em andamento. "
+            "Aguarde alguns segundos e tente novamente.",
+            409
         )
 
-        if not isinstance(resultado, dict):
-            raise ValueError("O serviço de leitura retornou dados inválidos.")
+    try:
+        cat_nomes = [
+            c.nome_categoria for c in CategoriaService.listar_todas()
+        ]
+    except Exception:
+        logger.exception("Erro ao carregar categorias.")
+        return _json_erro(
+            "Não foi possível carregar as categorias.", 500
+        )
 
-        _ensure_tmp_dir()
+    job_id = uuid.uuid4().hex
 
-        token = str(uuid.uuid4())
-        path = _preview_path(token, ext)
-
-        with open(path, "wb") as arquivo:
-            arquivo.write(file_bytes)
-
-        # Só substitui a prévia anterior depois que a nova foi criada.
-        _limpar_preview_temporario()
-
-        session["ia_preview"] = {
-            "dados": resultado,
-            "file_token": token,
-            "ext": ext,
-            "mimetype": mimetype,
-            "filename": os.path.basename(file.filename),
-            "origem": request.form.get("origem", "despesa"),
+    with _JOBS_LOCK:
+        _JOBS[job_id] = {
+            "status": "processando",
+            "criado": time.time(),
+            "usuario": id_usuario,
+            "entregue": False,
         }
 
-        if resultado.get("ia_sucesso"):
+    threading.Thread(
+        target=_executar_job,
+        args=(
+            job_id,
+            file_bytes,
+            mimetype,
+            ext,
+            file.filename,
+            request.form.get("origem", "despesa"),
+            cat_nomes,
+        ),
+        daemon=True,
+    ).start()
+
+    return jsonify(status="processando", job_id=job_id), 202
+
+
+@ia_fiscal_bp.route("/status/<job_id>")
+@login_required
+def status(job_id):
+    """Informa o andamento da leitura e, quando pronta, grava a prévia na sessão."""
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id)
+
+        if job is not None:
+            job = dict(job)  # cópia para ler fora do bloqueio
+
+    if not job or job["usuario"] != session.get("id_usuario"):
+        return jsonify(status="inexistente"), 404
+
+    if job["status"] == "processando":
+        return jsonify(status="processando")
+
+    if job["status"] == "erro":
+        return jsonify(status="erro", msg=job.get("msg"))
+
+    # Pronto. A entrega é idempotente: se o navegador perder a resposta
+    # (o iOS suspende a página com frequência) e perguntar de novo,
+    # recebe o mesmo redirecionamento.
+    if not job["entregue"]:
+        _limpar_preview_temporario()
+        session["ia_preview"] = job["preview"]
+
+        with _JOBS_LOCK:
+            if job_id in _JOBS:
+                _JOBS[job_id]["entregue"] = True
+
+        dados = job["preview"]["dados"]
+
+        if dados.get("ia_sucesso"):
             flash(
                 "Documento interpretado! Revise os dados antes de confirmar.",
                 "success"
             )
         else:
-            erro_msg = resultado.get(
+            erro_msg = dados.get(
                 "erro_msg",
                 "Não foi possível extrair os dados automaticamente."
             )
             flash(f"⚠️ {erro_msg}", "warning")
 
-        return redirect(url_for("ia_fiscal.revisar"))
+    elif not session.get("ia_preview"):
+        session["ia_preview"] = job["preview"]
 
-    except Exception:
-        logger.exception("Erro ao processar documento fiscal.")
-        flash("Não foi possível processar o arquivo enviado.", "danger")
-        return redirect(url_for("ia_fiscal.upload"))
+    return jsonify(status="ok", redirect=url_for("ia_fiscal.revisar"))
 
 
 @ia_fiscal_bp.route("/preview")

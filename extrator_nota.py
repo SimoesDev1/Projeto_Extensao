@@ -114,13 +114,17 @@ def _imagem_bytes_para_texto_ocr(image_bytes: bytes) -> str:
     inicio = time.perf_counter()
 
     try:
+        lado_max = int(os.getenv("OCR_MAX_LADO", "1280"))
+        alvo = int(os.getenv("OCR_ALVO", "1280"))
+
         with Image.open(io.BytesIO(image_bytes)) as imagem_original:
+            largura_original, altura_original = imagem_original.size
+
+            # JPEG: o decodificador já entrega a imagem reduzida (bem menos RAM).
+            if imagem_original.format == "JPEG":
+                imagem_original.draft("RGB", (lado_max, lado_max))
+
             img = ImageOps.exif_transpose(imagem_original).convert("RGB")
-
-        largura_original, altura_original = img.size
-
-        lado_max = int(os.getenv("OCR_MAX_LADO", "1600"))
-        alvo = int(os.getenv("OCR_ALVO", "1600"))
 
         # Limita o tamanho máximo da imagem
         img.thumbnail((lado_max, lado_max))

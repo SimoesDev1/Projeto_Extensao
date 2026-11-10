@@ -118,8 +118,11 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+    @keyframes ia-gira { to { transform: rotate(360deg); } }
+    .ia-gira { display: inline-block; animation: ia-gira 1s linear infinite; }
+</style>
 <script>
-    
 document.addEventListener('DOMContentLoaded', function () {
     const dropZone = document.getElementById('drop-zone');
     const inputFile = document.getElementById('input-file');
@@ -132,6 +135,96 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!formUpload || !inputFile || !dropZone) {
         console.error('IA UPLOAD | Elementos do formulário não encontrados.');
         return;
+    }
+
+    const CHAVE_JOB = 'ia_job_id';
+    const TEXTO_PADRAO =
+        '<i class="bi bi-stars"></i> Interpretar Nota com Inteligência Artificial';
+    const URL_STATUS = '{{ url_for("ia_fiscal.status", job_id="__ID__") }}';
+    let aguardando = false;
+
+    function guardarJob(id) { try { sessionStorage.setItem(CHAVE_JOB, id); } catch (_) {} }
+    function lerJob() { try { return sessionStorage.getItem(CHAVE_JOB); } catch (_) { return null; } }
+    function limparJob() { try { sessionStorage.removeItem(CHAVE_JOB); } catch (_) {} }
+
+    function ocupado(texto) {
+        submitButton.disabled = true;
+        submitButton.innerHTML =
+            '<i class="bi bi-arrow-repeat ia-gira"></i> ' + texto;
+    }
+
+    function pronto() {
+        limparJob();
+        submitButton.disabled = false;
+        submitButton.innerHTML = TEXTO_PADRAO;
+    }
+
+    // Reduz a foto no aparelho: envia menos dados e poupa memória no servidor.
+    async function reduzirImagem(file, maxLado = 1280, qualidade = 0.85) {
+        if (!file.type || !file.type.startsWith('image/')) return file;  // PDF segue igual
+
+        try {
+            const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+            const escala = Math.min(1, maxLado / Math.max(bmp.width, bmp.height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(bmp.width * escala);
+            canvas.height = Math.round(bmp.height * escala);
+            canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+            bmp.close();
+
+            const blob = await new Promise(ok => canvas.toBlob(ok, 'image/jpeg', qualidade));
+            if (!blob) return file;
+
+            const nome = file.name.replace(/\.[^.]+$/, '') + '.jpg';
+            return new File([blob], nome, { type: 'image/jpeg' });
+        } catch (e) {
+            console.warn('IA UPLOAD | Não foi possível reduzir a imagem; enviando o original.', e);
+            return file;
+        }
+    }
+
+    async function aguardar(jobId) {
+        if (aguardando) return;
+        aguardando = true;
+
+        try {
+            const inicio = Date.now();
+
+            while (Date.now() - inicio < 5 * 60 * 1000) {
+                await new Promise(r => setTimeout(r, 2000));
+
+                let r;
+                try {
+                    r = await fetch(URL_STATUS.replace('__ID__', jobId),
+                                    { credentials: 'same-origin', cache: 'no-store' });
+                } catch (e) {
+                    continue;  // rede oscilando ou iOS retomando a página: tenta de novo
+                }
+
+                if (r.redirected) {
+                    throw new Error('Sua sessão expirou. Atualize a página e entre novamente.');
+                }
+                if (r.status === 404) {
+                    throw new Error('Processamento não encontrado. Envie o documento novamente.');
+                }
+                if (!r.ok) continue;
+
+                const d = await r.json();
+
+                if (d.status === 'ok') {
+                    limparJob();
+                    window.location.href = d.redirect;
+                    return;
+                }
+                if (d.status === 'erro') {
+                    throw new Error(d.msg || 'Falha ao processar o documento.');
+                }
+            }
+
+            throw new Error('O processamento demorou demais. Tente novamente.');
+        } finally {
+            aguardando = false;
+        }
     }
 
     inputFile.addEventListener('change', function () {
@@ -160,42 +253,61 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    formUpload.addEventListener('submit', function (event) {
-        console.log('IA UPLOAD | Iniciando envio.');
+    formUpload.addEventListener('submit', async function (event) {
+        event.preventDefault();
 
-        const arquivo = inputFile.files[0];
-
-        if (!arquivo) {
-            event.preventDefault();
+        if (!inputFile.files[0]) {
             alert('Selecione uma imagem ou PDF antes de continuar.');
             return;
         }
-
         if (!csrfField || !csrfField.value) {
-            event.preventDefault();
             alert('Token de segurança ausente. Atualize a página.');
             return;
         }
 
-        console.log('IA UPLOAD | Arquivo:', {
-            nome: arquivo.name,
-            tamanho: arquivo.size,
-            tipo: arquivo.type
-        });
+        ocupado('Enviando documento...');
 
-        submitButton.disabled = true;
-        submitButton.innerHTML =
-            '<i class="bi bi-arrow-repeat"></i> Enviando documento...';
+        try {
+            const fd = new FormData(formUpload);
+            const reduzido = await reduzirImagem(inputFile.files[0]);
+            fd.set('documento', reduzido, reduzido.name);
+
+            const resp = await fetch(formUpload.action, {
+                method: 'POST',
+                body: fd,
+                credentials: 'same-origin'
+            });
+
+            let dados = null;
+            try { dados = await resp.json(); } catch (_) {}
+
+            if (!resp.ok || !dados || !dados.job_id) {
+                throw new Error((dados && dados.msg) ||
+                                'Falha no envio (HTTP ' + resp.status + ').');
+            }
+
+            guardarJob(dados.job_id);
+            ocupado('Lendo a nota (pode levar até 1 min)...');
+            await aguardar(dados.job_id);
+
+        } catch (erro) {
+            console.error('IA UPLOAD |', erro);
+            alert(erro.message);
+            pronto();
+        }
     });
 
+    // Se o Safari descartou ou congelou a página no meio, retoma de onde parou.
     window.addEventListener('pageshow', function () {
-        if (submitButton) {
-            submitButton.disabled = false;
-            submitButton.innerHTML =
-                '<i class="bi bi-stars"></i> Interpretar Nota com Inteligência Artificial';
+        const pendente = lerJob();
+
+        if (pendente) {
+            ocupado('Retomando leitura...');
+            aguardar(pendente).catch(function (e) { alert(e.message); pronto(); });
+        } else {
+            pronto();
         }
     });
 });
-
 </script>
 {% endblock %}

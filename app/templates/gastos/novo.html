@@ -126,7 +126,7 @@
             Envie uma foto ou PDF do comprovante. A IA extrai automaticamente os itens, valores e categorias. Voce revisa tudo antes de salvar.
         </p>
 
-        <form method="POST" action="{{ url_for('ia_fiscal.processar') }}" enctype="multipart/form-data" data-loading id="form-upload-ia-despesa">
+        <form method="POST" action="{{ url_for('ia_fiscal.processar') }}" enctype="multipart/form-data" id="form-upload-ia-despesa">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="origem" value="despesa">
 
@@ -358,4 +358,6 @@
         if (valInput) valInput.addEventListener('input', atualizarPreviewParcelas);
     });
 </script>
+
+<script src="{{ url_for('static', filename='js/ia-upload.js') }}"></script>
 {% endblock %}

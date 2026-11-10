@@ -575,53 +575,35 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // ENVIO NATIVO DO FORMULÁRIO
-    // Não utiliza createImageBitmap, DataTransfer, File ou fetch.
-    // O próprio Safari envia o arquivo diretamente ao Flask.
+    // ENVIO NATIVO DO FORMULÁRIO - DIAGNÓSTICO SAFARI
     formReajuste.addEventListener('submit', function(e) {
 
-        // Verifica se existe arquivo selecionado
+        console.log('FORMULÁRIO: evento submit iniciado');
+
         if (!inputPlanilha.files || !inputPlanilha.files[0]) {
             e.preventDefault();
-
-            alert(
-                'Por favor, selecione uma imagem/print, documento PDF ou planilha antes de processar.'
-            );
-
+            alert('Selecione um arquivo antes de continuar.');
             return;
         }
 
-        // Guarda o texto original do botão
-        btnProcessar.dataset.textoOriginal =
-            btnProcessar.innerHTML;
+        const arquivoSelecionado = inputPlanilha.files[0];
 
-        // Evita cliques duplicados
+        console.log('ARQUIVO:', arquivoSelecionado.name);
+        console.log('TAMANHO:', arquivoSelecionado.size);
+        console.log('TIPO:', arquivoSelecionado.type);
+
+        btnProcessar.dataset.textoOriginal = btnProcessar.innerHTML;
         btnProcessar.disabled = true;
+        btnProcessar.textContent = 'Enviando arquivo...';
 
-        // Atualiza o botão
-        btnProcessar.innerHTML =
-            '<i class="bi bi-arrow-repeat spin"></i> Processando documento com OCR e IPCA...';
-
-        // Exibe o carregamento global, se existir
-        const spinner =
-            document.getElementById('page-spinner');
+        const spinner = document.getElementById('page-spinner');
 
         if (spinner) {
             spinner.style.display = 'flex';
         }
-
-        /*
-         * IMPORTANTE:
-         * Não chamar e.preventDefault() aqui.
-         * Não chamar fetch().
-         * Não chamar HTMLFormElement.prototype.submit().
-         *
-         * O navegador continuará com o envio nativo do formulário,
-         * enviando o arquivo e seguindo o redirect do Flask.
-         */
     });
 
-    // Restaura a interface quando a página é carregada
+// Restaura a interface quando a página é carregada
     // ou recuperada pelo histórico do Safari.
     window.addEventListener('pageshow', function() {
         pararLoading();

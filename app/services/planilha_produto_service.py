@@ -101,6 +101,121 @@ def _executar_ocr(imagem):
         )
 
 
+def _registrar_diagnostico_recursos_ocr():
+    """Registra recursos de CPU e memoria disponiveis para o OCR."""
+    import multiprocessing
+    import platform
+    from pathlib import Path
+
+    sistema = platform.system()
+    cpus = multiprocessing.cpu_count()
+    afinidade = "N/D"
+    quota_cpu = "N/D"
+    memoria_total = "N/D"
+    memoria_disponivel = "N/D"
+    memoria_processo = "N/D"
+    limite_container = "N/D"
+    uso_container = "N/D"
+
+    try:
+        if hasattr(os, "sched_getaffinity"):
+            afinidade = len(os.sched_getaffinity(0))
+    except Exception:
+        pass
+
+    try:
+        cpu_max = Path("/sys/fs/cgroup/cpu.max")
+        if cpu_max.exists():
+            valores = cpu_max.read_text().strip().split()
+            if len(valores) == 2 and valores[0] != "max":
+                quota_cpu = round(int(valores[0]) / int(valores[1]), 2)
+        else:
+            quota = Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us")
+            periodo = Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us")
+            if quota.exists() and periodo.exists():
+                q = int(quota.read_text().strip())
+                p = int(periodo.read_text().strip())
+                if q > 0 and p > 0:
+                    quota_cpu = round(q / p, 2)
+    except Exception:
+        pass
+
+    try:
+        meminfo = Path("/proc/meminfo")
+        if meminfo.exists():
+            dados = {}
+            for linha in meminfo.read_text().splitlines():
+                partes = linha.split()
+                if len(partes) >= 2:
+                    dados[partes[0].rstrip(":")] = int(partes[1])
+
+            if "MemTotal" in dados:
+                memoria_total = round(dados["MemTotal"] / 1024, 2)
+
+            if "MemAvailable" in dados:
+                memoria_disponivel = round(dados["MemAvailable"] / 1024, 2)
+    except Exception:
+        pass
+
+    try:
+        status = Path("/proc/self/status")
+        if status.exists():
+            for linha in status.read_text().splitlines():
+                if linha.startswith("VmRSS:"):
+                    memoria_processo = round(
+                        int(linha.split()[1]) / 1024, 2
+                    )
+                    break
+    except Exception:
+        pass
+
+    try:
+        limite = Path("/sys/fs/cgroup/memory.max")
+        uso = Path("/sys/fs/cgroup/memory.current")
+
+        if limite.exists():
+            valor = limite.read_text().strip()
+            if valor != "max":
+                limite_container = round(int(valor) / (1024 ** 2), 2)
+
+        if uso.exists():
+            uso_container = round(
+                int(uso.read_text().strip()) / (1024 ** 2), 2
+            )
+        else:
+            limite_v1 = Path("/sys/fs/cgroup/memory/memory.limit_in_bytes")
+            uso_v1 = Path("/sys/fs/cgroup/memory/memory.usage_in_bytes")
+
+            if limite_v1.exists():
+                limite_container = round(
+                    int(limite_v1.read_text().strip()) / (1024 ** 2), 2
+                )
+
+            if uso_v1.exists():
+                uso_container = round(
+                    int(uso_v1.read_text().strip()) / (1024 ** 2), 2
+                )
+    except Exception:
+        pass
+
+    logger.info(
+        "OCR | Recursos | Sistema: %s | CPUs detectadas: %s | "
+        "Afinidade CPU: %s | Quota CPU: %s | "
+        "Memoria total: %s MB | Memoria disponivel: %s MB | "
+        "RAM processo: %s MB | Limite container: %s MB | "
+        "Uso container: %s MB",
+        sistema,
+        cpus,
+        afinidade,
+        quota_cpu,
+        memoria_total,
+        memoria_disponivel,
+        memoria_processo,
+        limite_container,
+        uso_container
+    )
+
+
 def _criar_ocr_engine():
     global _OCR_ENGINE
 
@@ -108,22 +223,35 @@ def _criar_ocr_engine():
         inicio = time.perf_counter()
 
         try:
+            _registrar_diagnostico_recursos_ocr()
+
             from rapidocr_onnxruntime import RapidOCR
 
-            _OCR_ENGINE = RapidOCR()
+            threads_intra = int(os.getenv("OCR_INTRA_OP_THREADS", "-1"))
+            threads_inter = int(os.getenv("OCR_INTER_OP_THREADS", "-1"))
+
+            _OCR_ENGINE = RapidOCR(
+                intra_op_num_threads=threads_intra,
+                inter_op_num_threads=threads_inter
+            )
 
             tempo = time.perf_counter() - inicio
+
             logger.info(
-                "OCR | Inicializacao do RapidOCR: %.2fs",
-                tempo
+                "OCR | RapidOCR inicializado em %.2fs | "
+                "Threads intra: %s | Threads inter: %s",
+                tempo,
+                threads_intra,
+                threads_inter
             )
 
         except Exception as e:
-            logger.error(
-                "Nao foi possivel inicializar RapidOCR: %s",
-                e
+            logger.exception(
+                "Nao foi possivel inicializar RapidOCR"
             )
-            raise RuntimeError(f"Motor de OCR nao disponivel: {e}")
+            raise RuntimeError(
+                f"Motor de OCR nao disponivel: {e}"
+            ) from e
 
     return _OCR_ENGINE
 

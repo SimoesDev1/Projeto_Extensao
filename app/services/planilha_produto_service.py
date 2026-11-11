@@ -72,24 +72,59 @@ def _obter_ocr_engine():
 
 
 def _executar_ocr(imagem):
+    inicio_engine = time.perf_counter()
     engine = _obter_ocr_engine()
+    tempo_engine = time.perf_counter() - inicio_engine
 
-    with _OCR_INFERENCE_LOCK:
-        try:
-            return engine(imagem, use_cls=False)
-        except TypeError:
-            return engine(imagem)
+    inicio_inferencia = time.perf_counter()
+
+    try:
+        with _OCR_INFERENCE_LOCK:
+            try:
+                resultado = engine(imagem, use_cls=False)
+            except TypeError:
+                resultado = engine(imagem)
+
+        return resultado
+
+    finally:
+        tempo_inferencia = time.perf_counter() - inicio_inferencia
+
+        logger.info(
+            "OCR | Motor disponivel: %.2fs | Inferencia: %.2fs | "
+            "Imagem: %s x %s | Memoria da matriz: %.2f MB",
+            tempo_engine,
+            tempo_inferencia,
+            imagem.shape[1],
+            imagem.shape[0],
+            imagem.nbytes / (1024 * 1024)
+        )
 
 
 def _criar_ocr_engine():
     global _OCR_ENGINE
+
     if _OCR_ENGINE is None:
+        inicio = time.perf_counter()
+
         try:
             from rapidocr_onnxruntime import RapidOCR
+
             _OCR_ENGINE = RapidOCR()
+
+            tempo = time.perf_counter() - inicio
+            logger.info(
+                "OCR | Inicializacao do RapidOCR: %.2fs",
+                tempo
+            )
+
         except Exception as e:
-            logger.error(f"Não foi possível inicializar RapidOCR: {e}")
-            raise RuntimeError(f"Motor de OCR não disponível: {e}")
+            logger.error(
+                "Nao foi possivel inicializar RapidOCR: %s",
+                e
+            )
+            raise RuntimeError(f"Motor de OCR nao disponivel: {e}")
+
     return _OCR_ENGINE
 
 
@@ -437,11 +472,29 @@ class PlanilhaProdutoService:
             return cached_df.copy()
 
         try:
-            imagem = cls._preparar_imagem_para_ocr(conteudo)
-        except Exception:
-            raise ValueError("Não foi possível abrir a imagem enviada. Envie um arquivo PNG, JPG ou WEBP válido.")
+            inicio_preparacao = time.perf_counter()
 
-        res, _ = _executar_ocr(imagem)
+            imagem = cls._preparar_imagem_para_ocr(conteudo)
+
+            tempo_preparacao = time.perf_counter() - inicio_preparacao
+
+            logger.info(
+                "OCR | Preparacao da imagem: %.2fs | Dimensoes: %s x %s | "
+                "Memoria: %.2f MB | Arquivo original: %.2f KB",
+                tempo_preparacao,
+                imagem.shape[1],
+                imagem.shape[0],
+                imagem.nbytes / (1024 * 1024),
+                len(conteudo) / 1024
+            )
+
+        except Exception:
+            raise ValueError("Nao foi possivel abrir a imagem enviada. Envie um arquivo PNG, JPG ou WEBP valido.")
+
+        try:
+            res, _ = _executar_ocr(imagem)
+        finally:
+            del imagem
         if not res:
             raise ValueError("Não foi possível detectar texto ou números na imagem enviada. Certifique-se de que a imagem esteja nítida.")
 

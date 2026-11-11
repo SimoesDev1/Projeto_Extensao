@@ -19,10 +19,11 @@ reajuste_ipca_bp = Blueprint('reajuste_ipca', __name__, url_prefix='/reajuste-ip
 ALLOWED_EXTENSIONS = {'pdf', 'xlsx', 'xls', 'csv', 'png', 'jpg', 'jpeg', 'webp'}
 TMP_REAJUSTE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'tmp_reajuste')
 
+# Configuração do limite de tamanho do conteúdo do upload
+MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB
 
 def _garantir_diretorio_temp():
     os.makedirs(TMP_REAJUSTE_DIR, exist_ok=True)
-
 
 def _limpar_arquivos_antigos():
     """Remove arquivos temporários com mais de 2 horas."""
@@ -85,6 +86,10 @@ def processar():
 
     if not allowed_file(file.filename):
         flash('Formato inválido. Por favor envie uma Imagem/Print (.png, .jpg, .jpeg, .webp), PDF (.pdf), Excel (.xlsx, .xls) ou CSV (.csv).', 'danger')
+        return redirect(url_for('reajuste_ipca.index'))
+
+    if file.content_length > MAX_CONTENT_LENGTH:
+        flash('O arquivo enviado é muito grande. O limite é de 16 MB.', 'danger')
         return redirect(url_for('reajuste_ipca.index'))
 
     modalidade = request.form.get('modalidade', '12_meses')

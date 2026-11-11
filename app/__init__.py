@@ -10,6 +10,7 @@ from flask_cors import CORS
 from config import Config
 from flask import request
 from flask_wtf.csrf import CSRFError
+from werkzeug.exceptions import RequestEntityTooLarge
 
 db = SQLAlchemy()
 csrf = CSRFProtect()
@@ -24,17 +25,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 def create_app():
     import os
     app = Flask(__name__)
     app.config.from_object(Config)
+
+    # Configuração de limite de tamanho do conteúdo do upload
+    app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
     db.init_app(app)
     csrf.init_app(app)
     limiter.init_app(app)
     migrate.init_app(app, db)
     
+    # Tratamento para RequestEntityTooLarge
+    @app.errorhandler(RequestEntityTooLarge)
+    def handle_request_entity_too_large(e):
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
+            return jsonify({'sucesso': False, 'erro': 'O arquivo enviado é muito grande. O limite é de 16 MB.'}), 413
+        return 'O arquivo enviado é muito grande. O limite é de 16 MB.', 413
+
     # ── Diagnóstico temporário de erros CSRF ──
     @app.errorhandler(CSRFError)
     def tratar_erro_csrf(e):

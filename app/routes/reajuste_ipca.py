@@ -20,7 +20,6 @@ ALLOWED_EXTENSIONS = {'pdf', 'xlsx', 'xls', 'csv', 'png', 'jpg', 'jpeg', 'webp'}
 TMP_REAJUSTE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'tmp_reajuste')
 
 # Configuração do limite de tamanho do conteúdo do upload
-MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB
 
 def _garantir_diretorio_temp():
     os.makedirs(TMP_REAJUSTE_DIR, exist_ok=True)
@@ -80,16 +79,13 @@ def processar():
         return redirect(url_for('reajuste_ipca.index'))
 
     file = request.files['planilha']
+
     if file.filename == '':
         flash('Nenhum arquivo selecionado.', 'warning')
         return redirect(url_for('reajuste_ipca.index'))
 
     if not allowed_file(file.filename):
         flash('Formato inválido. Por favor envie uma Imagem/Print (.png, .jpg, .jpeg, .webp), PDF (.pdf), Excel (.xlsx, .xls) ou CSV (.csv).', 'danger')
-        return redirect(url_for('reajuste_ipca.index'))
-
-    if file.content_length > MAX_CONTENT_LENGTH:
-        flash('O arquivo enviado é muito grande. O limite é de 16 MB.', 'danger')
         return redirect(url_for('reajuste_ipca.index'))
 
     modalidade = request.form.get('modalidade', '12_meses')
@@ -104,6 +100,7 @@ def processar():
         margem_adicional = 0.0
 
     taxa_manual = None
+
     if modalidade == 'personalizado':
         try:
             taxa_str = request.form.get('taxa_manual', '').replace(',', '.').strip()
@@ -125,12 +122,10 @@ def processar():
 
         token = uuid.uuid4().hex
 
-        # Salva o PDF gerado
         caminho_pdf = os.path.join(TMP_REAJUSTE_DIR, f"{token}.pdf")
         with open(caminho_pdf, 'wb') as f:
             f.write(resultado['pdf_bytes'])
 
-        # Salva também a versão Excel
         caminho_excel = os.path.join(TMP_REAJUSTE_DIR, f"{token}.xlsx")
         with open(caminho_excel, 'wb') as f:
             f.write(resultado['excel_bytes'])
@@ -161,13 +156,12 @@ def processar():
     except Exception as e:
         logger.exception("Erro ao processar reajuste de documento/planilha")
         msg_erro = str(e)
+
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
             return jsonify({'sucesso': False, 'erro': msg_erro}), 400
 
         flash(f'Erro ao processar documento: {msg_erro}', 'danger')
         return redirect(url_for('reajuste_ipca.index'))
-
-
 @reajuste_ipca_bp.route('/download/<token>', methods=['GET'])
 @reajuste_ipca_bp.route('/download-pdf/<token>', methods=['GET'])
 @login_required

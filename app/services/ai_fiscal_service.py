@@ -152,6 +152,8 @@ class AiFiscalService:
         TIMEOUT_S = min(int(os.getenv("EXTRACAO_TIMEOUT", "90")), 95)
         _t0 = _time.perf_counter()
 
+        from app.services.planilha_produto_service import OCROcupadoError
+
         try:
             import extrator_nota
 
@@ -236,6 +238,10 @@ class AiFiscalService:
             dados_convertidos["ia_sucesso"] = True
             dados_convertidos["modo_demo"] = False
             return dados_convertidos
+
+        except OCROcupadoError:
+            # Propaga a ocupacao para o chamador.
+            raise
 
         except Exception as e:
             # Loga com traceback completo, sem engolir exceções

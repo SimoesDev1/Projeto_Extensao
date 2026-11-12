@@ -71,6 +71,8 @@ def index():
 @login_required
 def processar():
     """Processa a planilha ou documento PDF enviado e aplica o reajuste pelo IPCA."""
+    from app.services.planilha_produto_service import OCROcupadoError
+
     _garantir_diretorio_temp()
     _limpar_arquivos_antigos()
 
@@ -165,6 +167,20 @@ def processar():
 
         session['reajuste_resultado'] = resultado_sessao
         flash('Produtos reajustados com sucesso de acordo com o IPCA oficial do Banco Central!', 'success')
+        return redirect(url_for('reajuste_ipca.index'))
+
+    except OCROcupadoError as e:
+        logger.warning("OCR ocupado durante reajuste IPCA: %s", e)
+
+        mensagem = str(e)
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
+            return jsonify({
+                'sucesso': False,
+                'erro': mensagem
+            }), 409
+
+        flash(mensagem, 'warning')
         return redirect(url_for('reajuste_ipca.index'))
 
     except Exception as e:

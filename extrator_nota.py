@@ -312,7 +312,20 @@ def extrair_dados_imagem_ocr(image_bytes: bytes) -> dict[str, Any]:
         )
         return copy.deepcopy(cached)
 
-    texto_completo = _imagem_bytes_para_texto_ocr(image_bytes)
+    from app.services.planilha_produto_service import (
+        _OCR_PIPELINE_LOCK,
+        OCROcupadoError,
+    )
+
+    if not _OCR_PIPELINE_LOCK.acquire(blocking=False):
+        raise OCROcupadoError(
+            "O OCR esta processando outro documento. Aguarde alguns instantes e tente novamente."
+        )
+
+    try:
+        texto_completo = _imagem_bytes_para_texto_ocr(image_bytes)
+    finally:
+        _OCR_PIPELINE_LOCK.release()
 
     # Diagn?stico tempor?rio: somente linhas relacionadas ao pagamento.
     for linha_ocr in texto_completo.splitlines():

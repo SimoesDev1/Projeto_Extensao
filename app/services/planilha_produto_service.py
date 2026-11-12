@@ -32,6 +32,11 @@ from collections import OrderedDict
 
 _OCR_LOCK = _threading.Lock()
 _OCR_INFERENCE_LOCK = _threading.Lock()
+
+class OCROcupadoError(RuntimeError):
+    pass
+
+_OCR_PIPELINE_LOCK = _threading.Lock()
 _OCR_ENGINE = None
 
 # Cache LRU de OCR indexado por SHA-256 do arquivo (máx. 8 entradas)
@@ -673,30 +678,43 @@ class PlanilhaProdutoService:
             logger.info("OCR | Reutilizando resultado do cache SHA-256: %s...", hash_arquivo[:12])
             return cached_df.copy()
 
-        try:
-            inicio_preparacao = time.perf_counter()
-
-            imagem = cls._preparar_imagem_para_ocr(conteudo)
-
-            tempo_preparacao = time.perf_counter() - inicio_preparacao
-
-            logger.info(
-                "OCR | Preparacao da imagem: %.2fs | Dimensoes: %s x %s | "
-                "Memoria: %.2f MB | Arquivo original: %.2f KB",
-                tempo_preparacao,
-                imagem.shape[1],
-                imagem.shape[0],
-                imagem.nbytes / (1024 * 1024),
-                len(conteudo) / 1024
+        if not _OCR_PIPELINE_LOCK.acquire(blocking=False):
+            raise OCROcupadoError(
+                "O OCR esta processando outro documento. Aguarde alguns instantes e tente novamente."
             )
 
-        except Exception:
-            raise ValueError("Nao foi possivel abrir a imagem enviada. Envie um arquivo PNG, JPG ou WEBP valido.")
-
         try:
-            res, _ = _executar_ocr(imagem)
+            try:
+                inicio_preparacao = time.perf_counter()
+
+                imagem = cls._preparar_imagem_para_ocr(conteudo)
+
+                tempo_preparacao = time.perf_counter() - inicio_preparacao
+
+                logger.info(
+                    "OCR | Preparacao da imagem: %.2fs | Dimensoes: %s x %s | "
+                    "Memoria: %.2f MB | Arquivo original: %.2f KB",
+                    tempo_preparacao,
+                    imagem.shape[1],
+                    imagem.shape[0],
+                    imagem.nbytes / (1024 * 1024),
+                    len(conteudo) / 1024
+                )
+
+            except Exception:
+                raise ValueError(
+                    "Nao foi possivel abrir a imagem enviada. "
+                    "Envie um arquivo PNG, JPG ou WEBP valido."
+                )
+
+            try:
+                res, _ = _executar_ocr(imagem)
+            finally:
+                del imagem
+
         finally:
-            del imagem
+            _OCR_PIPELINE_LOCK.release()
+
         if not res:
             raise ValueError("Não foi possível detectar texto ou números na imagem enviada. Certifique-se de que a imagem esteja nítida.")
 

@@ -63,7 +63,6 @@ _JOBS: dict[str, dict] = {}
 _JOBS_LOCK = threading.Lock()
 
 JOB_TTL_SEGUNDOS = 900          # remove jobs após 15 minutos
-JOB_ATIVO_MAX_SEGUNDOS = 120    # bloqueia novo envio enquanto há um em curso
 
 
 def _ensure_tmp_dir() -> None:
@@ -150,21 +149,23 @@ def _limpar_jobs_antigos() -> None:
     limite = time.time() - JOB_TTL_SEGUNDOS
 
     with _JOBS_LOCK:
-        for job_id in [
-            j for j, v in _JOBS.items() if v["criado"] < limite
-        ]:
+        antigos = [
+            job_id
+            for job_id, job in _JOBS.items()
+            if job.get("criado", 0) < limite
+            and job.get("status") != "processando"
+        ]
+
+        for job_id in antigos:
             _JOBS.pop(job_id, None)
 
 
 def _usuario_tem_job_ativo(id_usuario) -> bool:
-    limite = time.time() - JOB_ATIVO_MAX_SEGUNDOS
-
     with _JOBS_LOCK:
         return any(
-            v["usuario"] == id_usuario
-            and v["status"] == "processando"
-            and v["criado"] >= limite
-            for v in _JOBS.values()
+            job.get("usuario") == id_usuario
+            and job.get("status") == "processando"
+            for job in _JOBS.values()
         )
 
 
@@ -210,13 +211,25 @@ def _executar_job(
             },
         }
 
-    except Exception:
-        logger.exception(
-            "Erro ao processar documento fiscal (job %s).", job_id
-        )
+    except Exception as erro:
+        from app.services.planilha_produto_service import OCROcupadoError
+
+        if isinstance(erro, OCROcupadoError):
+            logger.warning(
+                "OCR ocupado | Job fiscal %s recusado: %s",
+                job_id,
+                erro
+            )
+            mensagem = str(erro)
+        else:
+            logger.exception(
+                "Erro ao processar documento fiscal (job %s).", job_id
+            )
+            mensagem = "Nao foi possivel processar o arquivo enviado."
+
         novo_estado = {
             "status": "erro",
-            "msg": "Não foi possível processar o arquivo enviado.",
+            "msg": mensagem,
         }
 
     with _JOBS_LOCK:
@@ -314,19 +327,31 @@ def processar():
             "entregue": False,
         }
 
-    threading.Thread(
-        target=_executar_job,
-        args=(
-            job_id,
-            file_bytes,
-            mimetype,
-            ext,
-            file.filename,
-            request.form.get("origem", "despesa"),
-            cat_nomes,
-        ),
-        daemon=True,
-    ).start()
+    try:
+        threading.Thread(
+            target=_executar_job,
+            args=(
+                job_id,
+                file_bytes,
+                mimetype,
+                ext,
+                file.filename,
+                request.form.get("origem", "despesa"),
+                cat_nomes,
+            ),
+            daemon=True,
+        ).start()
+    except Exception:
+        logger.exception(
+            "Nao foi possivel iniciar a thread do job fiscal %s.",
+            job_id
+        )
+        with _JOBS_LOCK:
+            _JOBS.pop(job_id, None)
+        return _json_erro(
+            "Nao foi possivel iniciar o processamento. Tente novamente.",
+            500
+        )
 
     return jsonify(status="processando", job_id=job_id), 202
 

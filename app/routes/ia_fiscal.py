@@ -212,7 +212,7 @@ def _executar_job(
         }
 
     except Exception as erro:
-        from app.services.planilha_produto_service import OCROcupadoError
+        from app.services.ocr_worker_service import OCROcupadoError
 
         if isinstance(erro, OCROcupadoError):
             logger.warning(
@@ -298,15 +298,6 @@ def processar():
 
     _limpar_jobs_antigos()
 
-    # Evita empilhar leituras: o OCR é compartilhado e novas tentativas
-    # só ficariam esperando na fila.
-    if _usuario_tem_job_ativo(id_usuario):
-        return _json_erro(
-            "Já existe uma leitura em andamento. "
-            "Aguarde alguns segundos e tente novamente.",
-            409
-        )
-
     try:
         cat_nomes = [
             c.nome_categoria for c in CategoriaService.listar_todas()
@@ -319,7 +310,21 @@ def processar():
 
     job_id = uuid.uuid4().hex
 
+    # Verificação e registro protegidos pelo mesmo bloqueio.
     with _JOBS_LOCK:
+        existe_ativo = any(
+            job.get("usuario") == id_usuario
+            and job.get("status") == "processando"
+            for job in _JOBS.values()
+        )
+
+        if existe_ativo:
+            return _json_erro(
+                "Já existe uma leitura em andamento. "
+                "Aguarde alguns segundos e tente novamente.",
+                409
+            )
+
         _JOBS[job_id] = {
             "status": "processando",
             "criado": time.time(),

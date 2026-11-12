@@ -25,7 +25,6 @@ import copy
 from datetime import datetime
 from typing import Any
 
-import pdfplumber
 
 
 logger = logging.getLogger(__name__)
@@ -34,24 +33,6 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # RAPIDOCR COMPARTILHADO
 # ============================================================
-
-def _obter_ocr_engine():
-    """Obtém a instância compartilhada do RapidOCR."""
-    from app.services.planilha_produto_service import (
-        _obter_ocr_engine as obter
-    )
-
-    return obter()
-
-
-def _executar_ocr(imagem):
-    """Executa o OCR utilizando o bloqueio compartilhado."""
-    from app.services.planilha_produto_service import (
-        _executar_ocr as executar
-    )
-
-    return executar(imagem)
-
 
 def _obter_ocr_cache(chave: str):
     """Obtém resultado do OCR em cache."""
@@ -77,114 +58,25 @@ def _salvar_ocr_cache(chave: str, valor):
 
 def _imagem_bytes_para_texto_ocr(image_bytes: bytes) -> str:
     """
-    Recebe bytes de uma imagem e retorna o texto extraído
-    via RapidOCR, registrando o tempo de cada etapa.
+    Executa OCR de imagem em processo independente e organiza as detecções.
+    O pós-processamento original é preservado abaixo.
     """
-
-    import numpy as np
-    import os
-
-    from PIL import Image, ImageOps
-
     inicio_total = time.perf_counter()
 
     logger.info(
-        "OCR | Iniciando processamento | Tamanho: %.2f MB",
-        len(image_bytes) / (1024 * 1024)
+        "OCR | Enviando imagem ao processo independente | Tamanho: %.2f MB",
+        len(image_bytes) / (1024 * 1024),
     )
 
-    # ETAPA 1: Obter o motor OCR
-    inicio = time.perf_counter()
+    from app.services.ocr_worker_service import executar_ocr_bytes
 
-    try:
-        _obter_ocr_engine()
-
-    except Exception:
-        logger.exception("OCR | Erro ao obter/inicializar o motor")
-        raise
-
-    tempo_motor = time.perf_counter() - inicio
+    res, tempo_worker = executar_ocr_bytes(image_bytes, modo="nota")
 
     logger.info(
-        "OCR | Motor obtido em %.2f segundos",
-        tempo_motor
+        "OCR | Worker concluído | caixas=%d | tempo_worker=%.2fs",
+        len(res or []),
+        tempo_worker,
     )
-
-    # ETAPA 2: Abrir e preparar a imagem
-    inicio = time.perf_counter()
-
-    try:
-        lado_max = int(os.getenv("OCR_MAX_LADO", "1280"))
-        alvo = int(os.getenv("OCR_ALVO", "1280"))
-
-        with Image.open(io.BytesIO(image_bytes)) as imagem_original:
-            largura_original, altura_original = imagem_original.size
-
-            # JPEG: o decodificador já entrega a imagem reduzida (bem menos RAM).
-            if imagem_original.format == "JPEG":
-                imagem_original.draft("RGB", (lado_max, lado_max))
-
-            img = ImageOps.exif_transpose(imagem_original).convert("RGB")
-
-        # Limita o tamanho máximo da imagem
-        img.thumbnail((lado_max, lado_max))
-
-        # Amplia imagens pequenas somente quando necessário
-        fator = min(3, max(1, round(alvo / max(img.size))))
-
-        if fator > 1:
-            img = img.resize(
-                (img.width * fator, img.height * fator),
-                Image.LANCZOS
-            )
-
-        largura_final, altura_final = img.size
-
-        imagem_np = np.array(img)
-
-        logger.info(
-            "OCR | Imagem preparada | Original: %sx%s | Final: %sx%s",
-            largura_original,
-            altura_original,
-            largura_final,
-            altura_final
-        )
-
-    except Exception:
-        logger.exception("OCR | Erro ao preparar a imagem")
-        raise
-
-    tempo_preparo = time.perf_counter() - inicio
-
-    logger.info(
-        "OCR | Preparação concluída em %.2f segundos",
-        tempo_preparo
-    )
-
-    # ETAPA 3: Executar o RapidOCR
-    inicio = time.perf_counter()
-
-    try:
-        logger.info(
-            "OCR | Aguardando execução compartilhada do RapidOCR"
-        )
-
-        res, _ = _executar_ocr(imagem_np)
-
-        tempo_inferencia = time.perf_counter() - inicio
-
-        quantidade = len(res) if res else 0
-
-        logger.info(
-            "OCR | Inferência concluída em %.2f segundos | "
-            "Caixas detectadas: %d",
-            tempo_inferencia,
-            quantidade
-        )
-
-    except Exception:
-        logger.exception("OCR | Erro durante a inferência")
-        raise
 
     if not res:
         logger.warning("OCR | Nenhum texto detectado")
@@ -312,20 +204,7 @@ def extrair_dados_imagem_ocr(image_bytes: bytes) -> dict[str, Any]:
         )
         return copy.deepcopy(cached)
 
-    from app.services.planilha_produto_service import (
-        _OCR_PIPELINE_LOCK,
-        OCROcupadoError,
-    )
-
-    if not _OCR_PIPELINE_LOCK.acquire(blocking=False):
-        raise OCROcupadoError(
-            "O OCR esta processando outro documento. Aguarde alguns instantes e tente novamente."
-        )
-
-    try:
-        texto_completo = _imagem_bytes_para_texto_ocr(image_bytes)
-    finally:
-        _OCR_PIPELINE_LOCK.release()
+    texto_completo = _imagem_bytes_para_texto_ocr(image_bytes)
 
     # Diagn?stico tempor?rio: somente linhas relacionadas ao pagamento.
     for linha_ocr in texto_completo.splitlines():
@@ -391,6 +270,7 @@ def extrair_dados_pdf(
     texto_completo = ""
     linhas = []
 
+    import pdfplumber
     with pdfplumber.open(stream) as pdf:
         for page in pdf.pages:
             t = page.extract_text() or ""

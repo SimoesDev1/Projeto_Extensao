@@ -7,7 +7,6 @@ import time
 from datetime import datetime
 import numpy as np
 import pandas as pd
-import pdfplumber
 from PIL import Image, ImageOps
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -30,14 +29,10 @@ import threading as _threading
 import hashlib
 from collections import OrderedDict
 
-_OCR_LOCK = _threading.Lock()
-_OCR_INFERENCE_LOCK = _threading.Lock()
-
-class OCROcupadoError(RuntimeError):
-    pass
-
-_OCR_PIPELINE_LOCK = _threading.Lock()
-_OCR_ENGINE = None
+from app.services.ocr_worker_service import (
+    executar_ocr_bytes,
+    OCROcupadoError,
+)
 
 # Cache LRU de OCR indexado por SHA-256 do arquivo (máx. 8 entradas)
 _OCR_CACHE = OrderedDict()
@@ -69,47 +64,6 @@ _LINHA_PRODUTO_PRECO = re.compile(
 )
 # Fallback: último valor monetário da linha (tabelas com colunas extras depois do preço)
 _PRECO_QUALQUER = re.compile(r'(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+[.,]\d{2})(?!\d)')
-
-
-def _obter_ocr_engine():
-    with _OCR_LOCK:
-        return _criar_ocr_engine()
-
-
-def _executar_ocr(imagem):
-    _registrar_memoria_ocr("antes_motor")
-
-    inicio_engine = time.perf_counter()
-    engine = _obter_ocr_engine()
-    tempo_engine = time.perf_counter() - inicio_engine
-
-    _registrar_memoria_ocr("apos_motor")
-
-    inicio_inferencia = time.perf_counter()
-
-    try:
-        with _OCR_INFERENCE_LOCK:
-            try:
-                resultado = engine(imagem, use_cls=False)
-            except TypeError:
-                resultado = engine(imagem)
-
-        return resultado
-
-    finally:
-        tempo_inferencia = time.perf_counter() - inicio_inferencia
-
-        _registrar_memoria_ocr("apos_inferencia")
-
-        logger.info(
-            "OCR | Motor disponivel: %.2fs | Inferencia: %.2fs | "
-            "Imagem: %s x %s | Memoria da matriz: %.2f MB",
-            tempo_engine,
-            tempo_inferencia,
-            imagem.shape[1],
-            imagem.shape[0],
-            imagem.nbytes / (1024 * 1024)
-        )
 
 
 def _registrar_memoria_ocr(etapa):
@@ -293,46 +247,6 @@ def _registrar_diagnostico_recursos_ocr():
         limite_container,
         uso_container
     )
-
-
-def _criar_ocr_engine():
-    global _OCR_ENGINE
-
-    if _OCR_ENGINE is None:
-        inicio = time.perf_counter()
-
-        try:
-            _registrar_diagnostico_recursos_ocr()
-
-            from rapidocr_onnxruntime import RapidOCR
-
-            threads_intra = int(os.getenv("OCR_INTRA_OP_THREADS", "-1"))
-            threads_inter = int(os.getenv("OCR_INTER_OP_THREADS", "-1"))
-
-            _OCR_ENGINE = RapidOCR(
-                intra_op_num_threads=threads_intra,
-                inter_op_num_threads=threads_inter
-            )
-
-            tempo = time.perf_counter() - inicio
-
-            logger.info(
-                "OCR | RapidOCR inicializado em %.2fs | "
-                "Threads intra: %s | Threads inter: %s",
-                tempo,
-                threads_intra,
-                threads_inter
-            )
-
-        except Exception as e:
-            logger.exception(
-                "Nao foi possivel inicializar RapidOCR"
-            )
-            raise RuntimeError(
-                f"Motor de OCR nao disponivel: {e}"
-            ) from e
-
-    return _OCR_ENGINE
 
 
 class NumberedCanvas(canvas.Canvas):
@@ -649,19 +563,6 @@ class PlanilhaProdutoService:
             return df_raw.iloc[1:].reset_index(drop=True)
 
     @classmethod
-    def _preparar_imagem_para_ocr(cls, conteudo: bytes):
-        """Abre a imagem, corrige a rotação (fotos de celular) e amplia imagens pequenas.
-        Prints pequenos (ex.: 215 px de largura) perdem espaços e vírgulas no OCR sem isso."""
-        img = ImageOps.exif_transpose(Image.open(io.BytesIO(conteudo))).convert('RGB')
-        max_lado = int(os.getenv("OCR_MAX_LADO", "1600"))
-        if max(img.size) > max_lado:
-            img.thumbnail((max_lado, max_lado), Image.LANCZOS)
-        fator = min(3, max(1, round(max_lado / max(img.size))))
-        if fator > 1:
-            img = img.resize((img.width * fator, img.height * fator), Image.LANCZOS)
-        return np.array(img)
-
-    @classmethod
     def ler_arquivo_imagem(cls, stream) -> pd.DataFrame:
         """
         Extrai produtos e preços de fotos e prints via OCR (RapidOCR).
@@ -678,42 +579,18 @@ class PlanilhaProdutoService:
             logger.info("OCR | Reutilizando resultado do cache SHA-256: %s...", hash_arquivo[:12])
             return cached_df.copy()
 
-        if not _OCR_PIPELINE_LOCK.acquire(blocking=False):
-            raise OCROcupadoError(
-                "O OCR esta processando outro documento. Aguarde alguns instantes e tente novamente."
-            )
+        inicio_ocr = time.perf_counter()
 
-        try:
-            try:
-                inicio_preparacao = time.perf_counter()
+        # A preparação da imagem e o modelo ficam no processo independente.
+        res, tempo_ocr = executar_ocr_bytes(conteudo, modo="planilha")
 
-                imagem = cls._preparar_imagem_para_ocr(conteudo)
-
-                tempo_preparacao = time.perf_counter() - inicio_preparacao
-
-                logger.info(
-                    "OCR | Preparacao da imagem: %.2fs | Dimensoes: %s x %s | "
-                    "Memoria: %.2f MB | Arquivo original: %.2f KB",
-                    tempo_preparacao,
-                    imagem.shape[1],
-                    imagem.shape[0],
-                    imagem.nbytes / (1024 * 1024),
-                    len(conteudo) / 1024
-                )
-
-            except Exception:
-                raise ValueError(
-                    "Nao foi possivel abrir a imagem enviada. "
-                    "Envie um arquivo PNG, JPG ou WEBP valido."
-                )
-
-            try:
-                res, _ = _executar_ocr(imagem)
-            finally:
-                del imagem
-
-        finally:
-            _OCR_PIPELINE_LOCK.release()
+        logger.info(
+            "OCR | Planilha processada pelo worker | "
+            "caixas=%d | tempo_total=%.2fs | tempo_chamada=%.2fs",
+            len(res or []),
+            tempo_ocr,
+            time.perf_counter() - inicio_ocr,
+        )
 
         if not res:
             raise ValueError("Não foi possível detectar texto ou números na imagem enviada. Certifique-se de que a imagem esteja nítida.")
@@ -782,6 +659,7 @@ class PlanilhaProdutoService:
         """
         linhas_brutas = []
 
+        import pdfplumber
         with pdfplumber.open(stream) as pdf:
             for page in pdf.pages:
                 raw_tables = page.extract_tables() or []

@@ -66,15 +66,6 @@ def abrir_navegador():
         logger.debug("Não foi possível abrir o navegador automaticamente.", exc_info=True)
 
 
-def _aquecer_ocr():
-    """Aquecimento opcional; não habilitar em instâncias com pouca RAM."""
-    try:
-        from app.services import planilha_produto_service as svc
-        svc._obter_ocr_engine()
-    except Exception:
-        logger.exception("Aquecimento OCR não concluído.")
-
-
 registrar_versoes_ocr()
 
 with app.app_context():
@@ -82,13 +73,6 @@ with app.app_context():
         seed_categorias()
     except Exception:
         logger.exception("Seed de categorias não concluído.")
-
-# Por padrão, não inicializa o modelo OCR na partida. Em instâncias com 512 MB,
-# mantenha OCR_AQUECER=0 para evitar carregar o modelo sem uma solicitação real.
-if os.environ.get("OCR_AQUECER", "0") == "1":
-    logger.warning("OCR_AQUECER=1: o modelo OCR será carregado durante a inicialização.")
-    threading.Thread(target=_aquecer_ocr, daemon=True, name="ocr-warmup").start()
-
 
 if __name__ == "__main__":
     # O Render usa Gunicorn; este bloco serve apenas para execução local.

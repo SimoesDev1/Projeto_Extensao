@@ -147,81 +147,91 @@ class AiFiscalService:
         Se falhar ou não conseguir identificar valores, retorna estrutura vazia para preenchimento manual.
         """
         import time as _time
-        from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutTimeout
 
-        TIMEOUT_S = min(int(os.getenv("EXTRACAO_TIMEOUT", "90")), 95)
+        from app.services.ocr_worker_service import (
+            OCROcupadoError,
+            OCRTimeoutError,
+            obter_timeout_processamento,
+        )
+
+        TIMEOUT_S = obter_timeout_processamento()
         _t0 = _time.perf_counter()
 
-        from app.services.planilha_produto_service import OCROcupadoError
-
         try:
-            import extrator_nota
-
             logger.info(
                 "EXTRATOR | início | MIME: %s | Bytes: %d | Timeout: %ds",
                 mimetype, len(file_bytes), TIMEOUT_S
             )
 
-            def _chamar_extrator():
-                if mimetype.endswith("pdf"):
-                    return extrator_nota.extrair_dados_pdf(file_bytes)
-                elif mimetype.startswith("image/") and os.getenv("OCR_IMAGEM", "1") == "1":
-                    logger.info("EXTRATOR | imagem recebida (%s). Iniciando OCR.", mimetype)
-                    return extrator_nota.extrair_dados_imagem_ocr(file_bytes)
-                return None  # tipo não suportado — sinaliza abaixo
+            if mimetype.endswith("pdf"):
+                from app.services.ocr_worker_service import executar_pdf_bytes
 
-            if not (mimetype.endswith("pdf") or
-                    (mimetype.startswith("image/") and os.getenv("OCR_IMAGEM", "1") == "1")):
-                logger.info("EXTRATOR | tipo não suportado: %s", mimetype)
-                return cls._gerar_resultado_manual(
-                    f"Formato '{mimetype}' não suportado pelo extrator. Preencha os campos manualmente.",
-                    hoje_str,
+                logger.info(
+                    "EXTRATOR | PDF enviado para processo independente."
                 )
 
-            
-            # Executa em thread separada para limitar a espera do worker.
-            executor = ThreadPoolExecutor(max_workers=1)
-            futuro = executor.submit(_chamar_extrator)
+                dados_extrator, tempo_worker = executar_pdf_bytes(
+                    file_bytes
+                )
 
-            try:
-                dados_extrator = futuro.result(timeout=TIMEOUT_S)
+                if not isinstance(dados_extrator, dict):
+                    raise ValueError(
+                        "O processo independente retornou dados PDF inválidos."
+                    )
 
-            except _FutTimeout:
-                logger.error(
-                    "EXTRATOR | TIMEOUT após %ds | MIME: %s | Bytes: %d",
-                    TIMEOUT_S,
+                logger.info(
+                    "EXTRATOR | PDF concluído pelo worker em %.2fs.",
+                    tempo_worker,
+                )
+
+            elif (
+                mimetype.startswith("image/")
+                and os.getenv("OCR_IMAGEM", "1") == "1"
+            ):
+                logger.info(
+                    "EXTRATOR | imagem recebida (%s). "
+                    "Iniciando OCR independente.",
                     mimetype,
-                    len(file_bytes)
                 )
 
-                futuro.cancel()
+                # Importação sob demanda, somente no fluxo de imagens.
+                import extrator_nota
+
+                dados_extrator = extrator_nota.extrair_dados_imagem_ocr(
+                    file_bytes
+                )
+
+            else:
+                logger.info(
+                    "EXTRATOR | tipo não suportado: %s",
+                    mimetype,
+                )
 
                 return cls._gerar_resultado_manual(
-                    f"Tempo limite de extração excedido ({TIMEOUT_S}s). "
-                    "Preencha os dados manualmente.",
+                    f"Formato '{mimetype}' não suportado pelo extrator. "
+                    "Preencha os campos manualmente.",
                     hoje_str,
                 )
 
-            finally:
-                # Não aguarda uma tarefa que ultrapassou o limite.
-                executor.shutdown(wait=False, cancel_futures=True)
-
-            if dados_extrator is None:
-                return cls._gerar_resultado_manual(
-                    f"Formato '{mimetype}' não suportado pelo extrator. Preencha os campos manualmente.",
-                    hoje_str,
+            if not isinstance(dados_extrator, dict):
+                raise ValueError(
+                    "O extrator não retornou um dicionário válido."
                 )
 
             logger.info(
-                "EXTRATOR | extração concluída em %.1fs | fornecedor=%r | valor=%.2f | parcelas=%d",
+                "EXTRATOR | extração concluída em %.1fs | fornecedor=%r | "
+                "valor=%.2f | parcelas=%d",
                 _time.perf_counter() - _t0,
                 dados_extrator.get("fornecedor", ""),
                 float(dados_extrator.get("valor_total") or 0),
                 int(dados_extrator.get("parcelas") or 1),
             )
 
-            # Converte o retorno do extrator_nota para o formato esperado pela tela de revisão
-            dados_convertidos = cls._converter_extrator_para_revisao(dados_extrator, hoje_str, categorias_existentes)
+            dados_convertidos = cls._converter_extrator_para_revisao(
+                dados_extrator,
+                hoje_str,
+                categorias_existentes,
+            )
 
             logger.info(
                 "EXTRATOR | conversão concluída | forma_pagamento=%r | total=%.2f",
@@ -229,28 +239,50 @@ class AiFiscalService:
                 dados_convertidos.get("valor_total", 0),
             )
 
-            if dados_convertidos["valor_total"] == 0.0 and not dados_convertidos["itens"]:
+            if (
+                dados_convertidos["valor_total"] == 0.0
+                and not dados_convertidos["itens"]
+            ):
                 return cls._gerar_resultado_manual(
-                    "Não foi possível identificar os dados automaticamente no documento. Por favor, preencha manualmente.",
+                    "Não foi possível identificar os dados automaticamente "
+                    "no documento. Por favor, preencha manualmente.",
                     hoje_str,
                 )
 
             dados_convertidos["ia_sucesso"] = True
             dados_convertidos["modo_demo"] = False
+
             return dados_convertidos
 
+        except OCRTimeoutError:
+            logger.error(
+                "EXTRATOR | processamento excedeu o limite de %ds | "
+                "MIME: %s | Bytes: %d",
+                TIMEOUT_S,
+                mimetype,
+                len(file_bytes),
+            )
+
+            return cls._gerar_resultado_manual(
+                f"Tempo limite de processamento excedido ({TIMEOUT_S}s). "
+                "Preencha os dados manualmente.",
+                hoje_str,
+            )
+
         except OCROcupadoError:
-            # Propaga a ocupacao para o chamador.
             raise
 
         except Exception as e:
-            # Loga com traceback completo, sem engolir exceções
             logger.exception(
                 "EXTRATOR | ERRO após %.1fs | MIME: %s | %s",
-                _time.perf_counter() - _t0, mimetype, e
+                _time.perf_counter() - _t0,
+                mimetype,
+                e,
             )
+
             return cls._gerar_resultado_manual(
-                f"Erro na extração automática ({e}). Por favor, preencha os dados manualmente.",
+                f"Erro na extração automática ({e}). "
+                "Por favor, preencha os dados manualmente.",
                 hoje_str,
             )
 

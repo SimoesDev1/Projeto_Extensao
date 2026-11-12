@@ -88,6 +88,20 @@ def processar():
         flash('Formato inválido. Por favor envie uma Imagem/Print (.png, .jpg, .jpeg, .webp), PDF (.pdf), Excel (.xlsx, .xls) ou CSV (.csv).', 'danger')
         return redirect(url_for('reajuste_ipca.index'))
 
+    # Valida o tamanho individual do arquivo (limite de 16 MB).
+    try:
+        file.stream.seek(0, os.SEEK_END)
+        tamanho_arquivo = file.stream.tell()
+        file.stream.seek(0)
+    except (OSError, AttributeError, ValueError):
+        logger.exception("N\u00e3o foi poss\u00edvel verificar o tamanho do arquivo enviado.")
+        flash('N\u00e3o foi poss\u00edvel validar o arquivo enviado. Tente novamente.', 'danger')
+        return redirect(url_for('reajuste_ipca.index'))
+
+    if tamanho_arquivo > 16 * 1024 * 1024:
+        flash('Arquivo muito grande. O limite permitido \u00e9 de 16 MB.', 'warning')
+        return redirect(url_for('reajuste_ipca.index'))
+
     modalidade = request.form.get('modalidade', '12_meses')
     regra_arredondamento = request.form.get('regra_arredondamento', 'padrao')
     coluna_preco_selecionada = request.form.get('coluna_preco', '').strip() or None

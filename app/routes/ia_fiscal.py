@@ -269,8 +269,8 @@ def processar():
     if not file_bytes:
         return _json_erro("O arquivo enviado está vazio.")
 
-    if len(file_bytes) > 10 * 1024 * 1024:
-        return _json_erro("Arquivo muito grande (máximo 10 MB).")
+    if len(file_bytes) > 16 * 1024 * 1024:
+        return _json_erro("Arquivo muito grande (máximo 16 MB).")
 
     mimetypes = {
         "pdf": "application/pdf",

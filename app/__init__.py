@@ -31,7 +31,7 @@ def create_app():
     app.config.from_object(Config)
 
     # Configuração de limite de tamanho do conteúdo do upload
-    app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+    app.config['MAX_CONTENT_LENGTH'] = 17 * 1024 * 1024
 
     db.init_app(app)
     csrf.init_app(app)
@@ -42,8 +42,8 @@ def create_app():
     @app.errorhandler(RequestEntityTooLarge)
     def handle_request_entity_too_large(e):
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
-            return jsonify({'sucesso': False, 'erro': 'O arquivo enviado é muito grande. O limite é de 16 MB.'}), 413
-        return 'O arquivo enviado é muito grande. O limite é de 16 MB.', 413
+            return jsonify({'sucesso': False, 'erro': 'O envio excedeu o limite máximo permitido pelo servidor.'}), 413
+        return 'O envio excedeu o limite máximo permitido pelo servidor.', 413
 
     # ── Diagnóstico temporário de erros CSRF ──
     @app.errorhandler(CSRFError)

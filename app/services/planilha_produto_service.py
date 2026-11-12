@@ -72,9 +72,13 @@ def _obter_ocr_engine():
 
 
 def _executar_ocr(imagem):
+    _registrar_memoria_ocr("antes_motor")
+
     inicio_engine = time.perf_counter()
     engine = _obter_ocr_engine()
     tempo_engine = time.perf_counter() - inicio_engine
+
+    _registrar_memoria_ocr("apos_motor")
 
     inicio_inferencia = time.perf_counter()
 
@@ -90,6 +94,8 @@ def _executar_ocr(imagem):
     finally:
         tempo_inferencia = time.perf_counter() - inicio_inferencia
 
+        _registrar_memoria_ocr("apos_inferencia")
+
         logger.info(
             "OCR | Motor disponivel: %.2fs | Inferencia: %.2fs | "
             "Imagem: %s x %s | Memoria da matriz: %.2f MB",
@@ -99,6 +105,74 @@ def _executar_ocr(imagem):
             imagem.shape[0],
             imagem.nbytes / (1024 * 1024)
         )
+
+
+def _registrar_memoria_ocr(etapa):
+    """Registra o consumo de memoria em uma etapa do OCR."""
+    from pathlib import Path
+
+    memoria_processo = "N/D"
+    uso_container = "N/D"
+    limite_container = "N/D"
+
+    try:
+        status = Path("/proc/self/status")
+        if status.exists():
+            for linha in status.read_text().splitlines():
+                if linha.startswith("VmRSS:"):
+                    memoria_processo = round(
+                        int(linha.split()[1]) / 1024, 2
+                    )
+                    break
+    except Exception:
+        pass
+
+    try:
+        uso = Path("/sys/fs/cgroup/memory.current")
+        limite = Path("/sys/fs/cgroup/memory.max")
+
+        if uso.exists():
+            uso_container = round(
+                int(uso.read_text().strip()) / (1024 ** 2), 2
+            )
+
+        if limite.exists():
+            valor = limite.read_text().strip()
+            if valor != "max":
+                limite_container = round(
+                    int(valor) / (1024 ** 2), 2
+                )
+        else:
+            uso_v1 = Path(
+                "/sys/fs/cgroup/memory/memory.usage_in_bytes"
+            )
+            limite_v1 = Path(
+                "/sys/fs/cgroup/memory/memory.limit_in_bytes"
+            )
+
+            if uso_v1.exists():
+                uso_container = round(
+                    int(uso_v1.read_text().strip()) / (1024 ** 2), 2
+                )
+
+            if limite_v1.exists():
+                limite_container = round(
+                    int(limite_v1.read_text().strip()) / (1024 ** 2), 2
+                )
+
+    except Exception:
+        pass
+
+    logger.info(
+        "OCR | Memoria | Etapa: %s | "
+        "RAM processo: %s MB | "
+        "Uso container: %s MB | "
+        "Limite container: %s MB",
+        etapa,
+        memoria_processo,
+        uso_container,
+        limite_container
+    )
 
 
 def _registrar_diagnostico_recursos_ocr():

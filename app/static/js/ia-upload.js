@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 const resposta = await fetch(form.action, {
                     method: 'POST',
                     body: dadosFormulario,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
                     credentials: 'same-origin'
                 });
 
@@ -64,8 +65,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 if (!resposta.ok || !dados || !dados.job_id) {
                     throw new Error(
-                        dados && dados.msg
-                            ? dados.msg
+                        dados && (dados.msg || dados.erro)
+                            ? (dados.msg || dados.erro)
                             : 'Falha no envio (HTTP ' + resposta.status + ').'
                     );
                 }

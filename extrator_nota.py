@@ -449,31 +449,26 @@ def _extrair_de_texto(
 
     data_formatada = ""
 
-    # Padrão DD/MM/AAAA, DD-MM-AAAA ou DD.MM.AAAA
-
+    # Aceita DD/MM/AAAA, DD-MM-AA e DD.MM.AAAA.
     datas_encontradas = re.findall(
-        r"\b(\d{2})[/.-](\d{2})[/.-](\d{4})\b",
+        r"\b(\d{2})[/.-](\d{2})[/.-](\d{2}|\d{4})\b",
         texto_completo
     )
 
-    if datas_encontradas:
+    for dia_txt, mes_txt, ano_txt in datas_encontradas:
+        try:
+            ano = int(ano_txt)
 
-        for d, m, a in datas_encontradas:
+            if len(ano_txt) == 2:
+                ano += 2000 if ano <= 69 else 1900
 
-            try:
-                dt = datetime(
-                    int(a),
-                    int(m),
-                    int(d)
-                )
+            dt = datetime(ano, int(mes_txt), int(dia_txt))
+            data_formatada = dt.strftime("%Y-%m-%d")
+            break
 
-                data_formatada = dt.strftime("%Y-%m-%d")
-                break
+        except ValueError:
+            continue
 
-            except ValueError:
-                continue
-
-    # ========================================================
     # 3. IDENTIFICAR FORMA DE PAGAMENTO E PARCELAS
     # ========================================================
 
@@ -492,61 +487,23 @@ def _extrair_de_texto(
         if unicodedata.category(caractere) != "Mn"
     )
 
-    # Prioridade 1: Pix
+    # Classifica??o conservadora: exige evid?ncia expl?cita.
     if re.search(r"\bPIX\b|PAGAMENTO\s+(?:VIA\s+)?PIX|CHAVE\s+PIX", t_norm):
         forma_pagamento = "Pix"
 
-    # Prioridade 2: Cart?o de cr?dito
-    elif re.search(
-        r"CARTAO\s+(?:DE\s+)?CREDITO"
-        r"|CREDITO\s+EM\s+\d+\s*[Xx]"
-        r"|COMPRA\s+CREDITO"
-        r"|CREDITO\s+PARCELADO"
-        r"|VENDA\s*A?\s*CREDITO",
-        t_norm
-    ):
+    elif re.search(r"\bCARTAO\s+(?:DE\s+)?CREDITO\b", t_norm):
         forma_pagamento = "Cart\u00e3o de Cr\u00e9dito"
 
-    # Prioridade 3: Cart?o de d?bito
-    elif re.search(
-        r"CARTAO\s+(?:DE\s+)?DEBITO"
-        r"|DEBITO\s+(?:EM\s+CONTA|AUTOMATICO|CONTA)"
-        r"|COMPRA\s+DEBITO",
-        t_norm
-    ):
+    elif re.search(r"\bCARTAO\s+(?:DE\s+)?DEBITO\b", t_norm):
         forma_pagamento = "Cart\u00e3o de D\u00e9bito"
 
-    # Prioridade 4: Dinheiro
-    elif re.search(
-        r"\bDINHEIRO\b|\bESPECIE\b|PAGAMENTO\s+EM\s+DINHEIRO",
-        t_norm
-    ):
+    elif re.search(r"\bDINHEIRO\b|\bESPECIE\b|PAGAMENTO\s+EM\s+DINHEIRO", t_norm):
         forma_pagamento = "Dinheiro"
 
-    # Prioridade 5: Transfer?ncia
-    # DOC foi removido para n?o confundir c?digos como DOC=100000.
-    elif re.search(
-        r"\bTRANSFERENCIA\b|\bTED\b|\bTEF\b",
-        t_norm
-    ):
+    elif re.search(r"\bTRANSFERENCIA\b|\bTED\b|\bTEF\b", t_norm):
         forma_pagamento = "Transfer\u00eancia"
 
-    # Prioridade 6: Boleto (mant?m o comportamento anterior)
-    elif re.search(
-        r"\bBOLETO\b|LINHA\s+DIGITAVEL|CODIGO\s+DE\s+BARRAS",
-        t_norm
-    ):
-        forma_pagamento = "Pix"
-
     logger.debug("EXTRATOR | forma_pagamento detectada: '%s'", forma_pagamento)
-
-    # ── Parcelas: identifica TOTAL (não parcela atual) ────────────────────
-    # Ordem de tentativa (mais específico → menos específico):
-    #   1. "Parcela N de M" ou "Parcela N/M" → total = M
-    #   2. "parc. N/M"  ou  "PARC N/M"      → total = M
-    #   3. "N/M" precedido por "PARCELA"     → total = M
-    #   4. "em Nx" / "Nx"                   → total = N
-    #   5. "N parcelas"                     → total = N
 
     _parc_total: int | None = None
 
@@ -600,13 +557,8 @@ def _extrair_de_texto(
         parcelas = _parc_total
         logger.debug("EXTRATOR | parcelas detectadas: %d", parcelas)
 
-        # Se há parcelas e ainda não identificamos a forma, verifica cartão
-        if not forma_pagamento and "CART" in t_upper:
-            forma_pagamento = "Cartão de Crédito"
-        elif forma_pagamento == "" and parcelas > 1:
-            forma_pagamento = "Cartão de Crédito"  # parcelamento → crédito por padrão
 
-    # ========================================================
+
     # 4. IDENTIFICAR VALOR TOTAL
     # ========================================================
 
@@ -767,17 +719,6 @@ def _extrair_de_texto(
             except ValueError:
                 pass
 
-    if not itens and valor_total > 0:
-
-        desc_padrao = fornecedor or "Despesa de Comprovante"
-
-        itens.append({
-            'descricao': desc_padrao,
-            'valor': valor_total,
-            'categoria_sugerida': ''
-        })
-
-    # ========================================================
     # RETORNO PADRONIZADO
     # ========================================================
 

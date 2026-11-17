@@ -1,8 +1,6 @@
 """
-AiChatService — assistente financeiro conversacional usando o mesmo modelo
-Ollama/Qwen que já é usado pelo AiFiscalService.
+AiChatService — assistente financeiro conversacional com suporte a Gemini e Ollama.
 """
-import json
 import logging
 import os
 import re
@@ -16,12 +14,20 @@ logger = logging.getLogger(__name__)
 class AiChatService:
     OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
     OLLAMA_MODEL = os.getenv("OLLAMA_CHAT_MODEL", os.getenv("OLLAMA_MODEL", "qwen3-vl:4b-instruct"))
+    GEMINI_MODEL = os.getenv("GEMINI_CHAT_MODEL", os.getenv("GEMINI_MODEL", "gemini-1.5-flash"))
     TIMEOUT = min(int(os.getenv("OLLAMA_TIMEOUT", "90")), 95)
 
     @classmethod
+    def is_gemini_configurado(cls) -> bool:
+        chave = os.getenv("GEMINI_API_KEY", "").strip()
+        return bool(chave and not chave.startswith("AQ.placeholder"))
+
+    @classmethod
     def is_configurado(cls) -> bool:
+        if cls.is_gemini_configurado():
+            return True
         try:
-            r = requests.get(f"{cls.OLLAMA_HOST}/api/tags", timeout=5)
+            r = requests.get(f"{cls.OLLAMA_HOST}/api/tags", timeout=3)
             return r.status_code == 200
         except Exception:
             return False
@@ -30,13 +36,7 @@ class AiChatService:
     def responder(cls, pergunta: str, contexto_financeiro: dict) -> str:
         """
         Envia uma pergunta com contexto financeiro para o modelo e retorna a resposta.
-
-        contexto_financeiro deve conter:
-          - total_receitas, total_despesas, saldo (floats do mês atual)
-          - por_categoria: dict {nome: valor}
-          - por_tipo_receita: dict {tipo: valor}
-          - mes, ano: int
-          - nome_usuario: str
+        Prioriza Gemini Flash (baixo consumo e alta velocidade); caso indisponível, usa Ollama.
         """
         mes = contexto_financeiro.get('mes', date.today().month)
         ano = contexto_financeiro.get('ano', date.today().year)
@@ -76,6 +76,27 @@ INSTRUÇÕES:
 - Nunca invente dados que não foram fornecidos acima.
 """
 
+        # 1. Tenta responder via Gemini se configurado
+        if cls.is_gemini_configurado():
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=os.getenv("GEMINI_API_KEY", "").strip())
+                modelo = genai.GenerativeModel(
+                    model_name=cls.GEMINI_MODEL,
+                    system_instruction=system_prompt,
+                    generation_config={
+                        "temperature": 0.7,
+                        "max_output_tokens": 512,
+                    }
+                )
+                resposta = modelo.generate_content(pergunta)
+                texto = (resposta.text or "").strip()
+                if texto:
+                    return texto
+            except Exception as exc:
+                logger.warning("AiChatService: Falha ao consultar Gemini (%s). Tentando Ollama.", exc)
+
+        # 2. Fallback para Ollama
         payload = {
             "model": cls.OLLAMA_MODEL,
             "messages": [
@@ -98,19 +119,14 @@ INSTRUÇÕES:
             resp.raise_for_status()
             data = resp.json()
             content = data.get("message", {}).get("content", "")
-            # Remove blocos <think>...</think> caso o modelo retorne
             content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
             return content or "Não foi possível gerar uma resposta."
         except requests.exceptions.ConnectionError:
-            logger.warning("AiChatService: Ollama indisponível (ConnectionError).")
-            return "⚠️ O assistente financeiro está temporariamente indisponível. O serviço Ollama não está em execução — verifique se ele foi iniciado corretamente."
+            logger.warning("AiChatService: Ollama e Gemini indisponíveis.")
+            return "⚠️ O assistente financeiro está temporariamente indisponível. Para ativá-lo, configure a GEMINI_API_KEY no arquivo .env ou inicie o serviço Ollama local."
         except requests.exceptions.Timeout:
             logger.warning("AiChatService: timeout ao aguardar resposta do Ollama.")
             return "⏱️ O assistente demorou demais para responder. Tente novamente com uma pergunta mais curta ou aguarde alguns instantes."
-        except requests.RequestException as e:
-            logger.exception("AiChatService: erro de comunicação com o Ollama: %s", e)
-            return "⚠️ Erro de comunicação com o assistente financeiro. Tente novamente em alguns instantes."
         except Exception as e:
-            # Loga com traceback completo sem engolir a exceção
-            logger.exception("AiChatService: erro inesperado ao consultar o modelo: %s", e)
-            return "❌ Ocorreu um erro inesperado ao consultar o assistente. Tente novamente."
+            logger.exception("AiChatService: erro ao consultar o modelo: %s", e)
+            return "❌ Ocorreu um erro ao consultar o assistente. Tente novamente."

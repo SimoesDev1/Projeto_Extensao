@@ -91,6 +91,7 @@
                         <div class="form-group">
                             <label class="form-label">Forma de Pagamento / Recebimento <span style="color:var(--red);">*</span></label>
                             <select name="forma_pagamento" id="sel-forma-pagamento" class="form-select" required onchange="ajustarFormaPagamento(this.value)">
+                                <option value="" {% if not dados.forma_pagamento %}selected{% endif %}>Selecione a forma de pagamento</option>
                                 {% for fp in formas_pagamento %}
                                 <option value="{{ fp }}" {% if dados.forma_pagamento and dados.forma_pagamento.lower() == fp.lower() %}selected{% endif %}>
                                     {{ fp }}
@@ -152,7 +153,14 @@
                     </button>
                 </div>
                 <div class="card-body" style="padding: 0;">
-                    <table class="table" id="tabela-itens">
+                                        <div hidden>
+                        <select id="modelo-categoria-item" aria-hidden="true" tabindex="-1">
+                            {% for cat in categorias %}
+                            <option value="{{ cat.id_categoria }}">{{ cat.nome_categoria }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+<table class="table" id="tabela-itens">
                         <thead>
                             <tr>
                                 <th>Descrição do Item</th>
@@ -192,11 +200,12 @@
                             <tr>
                                 <td>
                                     <input type="text" name="item_descricao[]" class="form-control"
-                                           value="{{ dados.estabelecimento or 'Despesa de Comprovante' }}" required>
+                                           placeholder="Ex: {{ dados.estabelecimento or 'Descrição dos insumos' }}"
+                                           value="{{ dados.estabelecimento or '' }}" required>
                                 </td>
                                 <td>
                                     <input type="number" step="0.01" min="0.01" name="item_valor[]" class="form-control item-val"
-                                           value="{{ dados.valor_total or 0 }}" required oninput="calcularTotalItens()">
+                                           value="{{ dados.valor_total or 0.00 }}" required oninput="calcularTotalItens()">
                                 </td>
                                 <td>
                                     <select name="item_categoria[]" class="form-select" required>
@@ -206,7 +215,7 @@
                                     </select>
                                 </td>
                                 <td style="text-align: center;">
-                                    <button type="button" class="btn btn-ghost btn-sm btn-icon" onclick="removerLinhaItem(this)">
+                                    <button type="button" class="btn btn-ghost btn-sm btn-icon" onclick="removerLinhaItem(this)" title="Remover item">
                                         <i class="bi bi-trash3" style="color:var(--red);"></i>
                                     </button>
                                 </td>
@@ -216,9 +225,7 @@
                         <tfoot>
                             <tr class="table-total">
                                 <td style="font-size:0.85rem; color:var(--text-muted);">Soma dos Itens a lançar:</td>
-                                <td id="soma-itens-total" class="valor-negativo" style="white-space:nowrap;">
-                                    R$ {{ "%.2f"|format(dados.valor_total or 0)|replace('.',',') }}
-                                </td>
+                                <td id="soma-itens-total" class="valor-negativo" style="white-space:nowrap;">R$ 0,00</td>
                                 <td colspan="2"></td>
                             </tr>
                         </tfoot>
@@ -279,80 +286,177 @@
 {% block scripts %}
 
 <script>
-    document.addEventListener('DOMContentLoaded', function () {
-        const dropZone = document.getElementById('drop-zone');
-        const inputFile = document.getElementById('input-file');
-        const fileInfo = document.getElementById('file-info');
-        const fileName = document.getElementById('file-name');
-        const formUpload = document.getElementById('form-upload-ia');
-        const csrfField = document.getElementById('csrf-token-field');
-        const submitButton = document.getElementById('btn-submit-ia');
+    function setSectionEnabled(section, enabled) {
+        if (!section) return;
+        section.querySelectorAll('input, select, textarea').forEach(function (el) {
+            el.disabled = !enabled;
+        });
+    }
 
-        if (!dropZone || !inputFile || !formUpload) {
-            console.error('IA UPLOAD | Elementos do formulário não encontrados.');
+    function toggleTipoTransacao(tipo) {
+        const secDespesas = document.getElementById('secao-despesas');
+        const secReceita = document.getElementById('secao-receita');
+        const blocoParcelamento = document.getElementById('bloco-parcelamento');
+        const isReceita = tipo === 'receita';
+
+        if (secDespesas) secDespesas.style.display = isReceita ? 'none' : 'block';
+        if (secReceita) secReceita.style.display = isReceita ? 'block' : 'none';
+        if (blocoParcelamento) {
+            blocoParcelamento.style.display = isReceita ? 'none' : 'block';
+        }
+
+        setSectionEnabled(secDespesas, !isReceita);
+        setSectionEnabled(secReceita, isReceita);
+        if (blocoParcelamento) {
+            setSectionEnabled(blocoParcelamento, !isReceita);
+        }
+        if (!isReceita) {
+            calcularTotalItens();
+            atualizarPreviewParcelas();
+        }
+    }
+
+    function ajustarFormaPagamento(forma) {
+        const chk = document.getElementById('chk-parcelado');
+        if (forma === 'Cartão de Crédito') {
+            // Mantém ou sugere parcelamento
+        } else if (chk && chk.checked) {
+            const selFp = document.getElementById('sel-forma-pagamento');
+            if (selFp) selFp.value = 'Cartão de Crédito';
+        }
+    }
+
+    function toggleParcelamento() {
+        const chk = document.getElementById('chk-parcelado');
+        const campos = document.getElementById('campos-parcelamento');
+        const selFp = document.getElementById('sel-forma-pagamento');
+
+        if (chk && campos) {
+            campos.style.display = chk.checked ? 'grid' : 'none';
+            if (chk.checked && selFp && (!selFp.value || selFp.value !== 'Cartão de Crédito')) {
+                selFp.value = 'Cartão de Crédito';
+            }
+            atualizarPreviewParcelas();
+        }
+    }
+
+    function atualizarPreviewParcelas() {
+        const chk = document.getElementById('chk-parcelado');
+        if (!chk || !chk.checked) return;
+
+        const sel = document.getElementById('sel-numero-parcelas');
+        const numParcelas = parseInt(sel ? sel.value : 1) || 1;
+
+        let total = 0;
+        document.querySelectorAll('.item-val:not(:disabled)').forEach(function (input) {
+            const v = parseFloat(input.value) || 0;
+            total += v;
+        });
+
+        const valorParcela = total > 0 ? (total / numParcelas).toFixed(2).replace('.', ',') : '0,00';
+        const txt = document.getElementById('texto-resumo-parcelas');
+        if (txt) {
+            txt.innerHTML = `Serão gerados <strong>${numParcelas} lançamentos mensais</strong> de aprox. <strong style="color:var(--amber);">R$ ${valorParcela}</strong> cada nos próximos ${numParcelas} meses.`;
+        }
+    }
+
+    window.calcularTotalItens = function () {
+        let total = 0;
+
+        document.querySelectorAll('#itens-body .item-val:not(:disabled)').forEach(function (campo) {
+            const valor = Number.parseFloat(campo.value);
+            if (Number.isFinite(valor)) total += valor;
+        });
+
+        const destino = document.getElementById('soma-itens-total');
+        if (destino) {
+            destino.textContent = new Intl.NumberFormat('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+            }).format(total);
+        }
+        atualizarPreviewParcelas();
+    };
+
+    window.removerLinhaItem = function (botao) {
+        const linha = botao.closest('tr');
+        const tbody = document.getElementById('itens-body');
+        if (tbody && tbody.querySelectorAll('tr').length > 1) {
+            linha.remove();
+            window.calcularTotalItens();
+        } else {
+            alert('A nota deve conter pelo menos um item.');
+        }
+    };
+
+    window.adicionarLinhaItem = function () {
+        const tbody = document.getElementById('itens-body');
+        const modelo = document.getElementById('modelo-categoria-item');
+
+        if (!tbody || !modelo || modelo.options.length === 0) {
+            alert('Não foi possível carregar as categorias.');
             return;
         }
 
-        inputFile.addEventListener('change', function () {
-            if (inputFile.files && inputFile.files.length > 0) {
-                const file = inputFile.files[0];
+        const tr = document.createElement('tr');
 
-                fileName.textContent =
-                    `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+        const tdDescricao = document.createElement('td');
+        const descricao = document.createElement('input');
+        descricao.type = 'text';
+        descricao.name = 'item_descricao[]';
+        descricao.className = 'form-control';
+        descricao.placeholder = 'Descrição do produto ou serviço';
+        descricao.required = true;
+        tdDescricao.appendChild(descricao);
 
-                fileInfo.style.display = 'inline-flex';
-                dropZone.style.borderColor = '#a855f7';
-                dropZone.style.background = 'rgba(168,85,247,0.08)';
-            }
+        const tdValor = document.createElement('td');
+        const valor = document.createElement('input');
+        valor.type = 'number';
+        valor.step = '0.01';
+        valor.min = '0.01';
+        valor.name = 'item_valor[]';
+        valor.className = 'form-control item-val';
+        valor.required = true;
+        valor.addEventListener('input', window.calcularTotalItens);
+        tdValor.appendChild(valor);
+
+        const tdCategoria = document.createElement('td');
+        const categoria = document.createElement('select');
+        categoria.name = 'item_categoria[]';
+        categoria.className = 'form-select';
+        categoria.required = true;
+
+        Array.from(modelo.options).forEach(function (opcao) {
+            categoria.add(opcao.cloneNode(true));
         });
 
-        dropZone.addEventListener('dragover', function (event) {
-            event.preventDefault();
-            dropZone.style.borderColor = '#c084fc';
+        tdCategoria.appendChild(categoria);
+
+        const tdRemover = document.createElement('td');
+        tdRemover.style.textAlign = 'center';
+
+        const botao = document.createElement('button');
+        botao.type = 'button';
+        botao.className = 'btn btn-ghost btn-sm btn-icon';
+        botao.title = 'Remover item';
+        botao.innerHTML = '<i class="bi bi-trash3" style="color:var(--red);"></i>';
+        botao.addEventListener('click', function () {
+            window.removerLinhaItem(botao);
         });
 
-        dropZone.addEventListener('dragleave', function () {
-            dropZone.style.borderColor = 'rgba(192,132,252,0.4)';
-        });
+        tdRemover.appendChild(botao);
+        tr.append(tdDescricao, tdValor, tdCategoria, tdRemover);
+        tbody.appendChild(tr);
 
-        dropZone.addEventListener('drop', function (event) {
-            event.preventDefault();
+        descricao.focus();
+        window.calcularTotalItens();
+    };
 
-            if (event.dataTransfer.files.length > 0) {
-                inputFile.files = event.dataTransfer.files;
-                inputFile.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-        });
-
-        formUpload.addEventListener('submit', function (event) {
-            console.log('IA UPLOAD | Iniciando envio.');
-
-            const arquivo = inputFile.files[0];
-
-            if (!arquivo) {
-                event.preventDefault();
-                alert('Selecione uma imagem ou PDF antes de continuar.');
-                return;
-            }
-
-            if (!csrfField || !csrfField.value) {
-                event.preventDefault();
-                alert('Token de segurança ausente. Atualize a página e tente novamente.');
-                return;
-            }
-
-            console.log('IA UPLOAD | Arquivo:', {
-                nome: arquivo.name,
-                tamanho: arquivo.size,
-                tipo: arquivo.type
-            });
-
-            console.log('IA UPLOAD | CSRF presente:', !!csrfField.value);
-
-            submitButton.disabled = true;
-            submitButton.innerHTML =
-                '<span class="spinner-border spinner-border-sm me-2"></span> Processando nota...';
-        });
+    document.addEventListener('DOMContentLoaded', function () {
+        const sel = document.getElementById('sel-tipo-transacao');
+        if (sel) toggleTipoTransacao(sel.value);
+        window.calcularTotalItens();
+        atualizarPreviewParcelas();
     });
 </script>
 

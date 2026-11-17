@@ -14,6 +14,30 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const URL_STATUS = '/ia/status/__ID__';
 
+    // Reduz fotos no dispositivo antes do envio para poupar dados e acelerar a resposta do servidor
+    async function reduzirImagem(file, maxLado = 1280, qualidade = 0.85) {
+        if (!file.type || !file.type.startsWith('image/')) return file;
+
+        try {
+            const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+            const escala = Math.min(1, maxLado / Math.max(bmp.width, bmp.height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(bmp.width * escala);
+            canvas.height = Math.round(bmp.height * escala);
+            canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+            bmp.close();
+
+            const blob = await new Promise(ok => canvas.toBlob(ok, 'image/jpeg', qualidade));
+            if (!blob) return file;
+
+            const nome = file.name.replace(/\.[^.]+$/, '') + '.jpg';
+            return new File([blob], nome, { type: 'image/jpeg' });
+        } catch (e) {
+            console.warn('IA UPLOAD | Não foi possível otimizar imagem no cliente; enviando original.', e);
+            return file;
+        }
+    }
+
     formularios.forEach(function (config) {
         const form = document.getElementById(config.id);
         if (!form) return;
@@ -44,10 +68,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
             enviando = true;
             botao.disabled = true;
-            botao.innerHTML = '<i class="bi bi-arrow-repeat ia-gira"></i> Enviando documento...';
+            botao.innerHTML = '<i class="bi bi-arrow-repeat ia-gira"></i> Otimizando e enviando...';
 
             try {
                 const dadosFormulario = new FormData(form);
+                const arquivoOtimizado = await reduzirImagem(input.files[0]);
+                dadosFormulario.set('documento', arquivoOtimizado, arquivoOtimizado.name);
 
                 const resposta = await fetch(form.action, {
                     method: 'POST',
@@ -71,7 +97,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     );
                 }
 
-                botao.innerHTML = '<i class="bi bi-arrow-repeat ia-gira"></i> Lendo documento...';
+                botao.innerHTML = '<i class="bi bi-arrow-repeat ia-gira"></i> Processando documento fiscal...';
 
                 const inicio = Date.now();
 
@@ -109,6 +135,7 @@ document.addEventListener('DOMContentLoaded', function () {
             } catch (erro) {
                 console.error('IA UPLOAD |', erro);
                 alert(erro.message || 'Erro ao processar o documento.');
+            } finally {
                 enviando = false;
                 botao.disabled = false;
                 botao.innerHTML = config.texto;

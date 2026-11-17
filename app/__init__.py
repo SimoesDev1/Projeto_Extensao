@@ -30,6 +30,27 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
+    # Em desenvolvimento local, valida se o host remoto está acessível antes de inicializar o SQLAlchemy
+    if not app.config.get('IS_PRODUCTION') and not str(app.config.get('SQLALCHEMY_DATABASE_URI', '')).startswith('sqlite'):
+        try:
+            import socket
+            from urllib.parse import urlparse
+            _parsed_db = urlparse(app.config['SQLALCHEMY_DATABASE_URI'])
+            if _parsed_db.hostname:
+                socket.gethostbyname(_parsed_db.hostname)
+        except Exception as _dns_err:
+            _fallback_sqlite = f"sqlite:///{os.path.join(app.config['BASE_DIR'], 'db', 'doce_como_mel.db')}"
+            logger.warning(
+                "Banco remoto inacessível localmente (%s). Alternando para SQLite local de desenvolvimento: %s",
+                _dns_err,
+                _fallback_sqlite
+            )
+            app.config['SQLALCHEMY_DATABASE_URI'] = _fallback_sqlite
+            app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+                'connect_args': {'timeout': 30},
+                'pool_pre_ping': True,
+            }
+
     # Configuração de limite de tamanho do conteúdo do upload
     app.config['MAX_CONTENT_LENGTH'] = 17 * 1024 * 1024
 

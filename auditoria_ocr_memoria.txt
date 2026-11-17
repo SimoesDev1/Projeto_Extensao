@@ -1,0 +1,4517 @@
+﻿=== AUDITORIA DE MEMORIA E OCR ===
+
+=== GIT STATUS ===
+## master...origin/master
+?? app/__init__.py.bak_limite_20261111_223924
+?? app/__init__.py.bak_mensagem_limite_20261111_224527
+?? app/routes/ia_fiscal.py.bak_20261111_223644
+?? app/routes/ia_fiscal.py.bak_jobs_ocr_20261111_230423
+?? app/routes/ia_fiscal.py.bak_thread_start_20261111_231752
+?? app/routes/reajuste_ipca.py.bak_limite_20261111_223924
+?? app/routes/reajuste_ipca.py.bak_trava_ocr_20261111_230858
+?? app/services/ai_fiscal_service.py.bak_excecao_ocr_20261111_230743
+?? app/services/planilha_produto_service.py.bak_memoria_ocr
+?? app/services/planilha_produto_service.py.bak_ocr_diagnostico_recursos
+?? app/services/planilha_produto_service.py.bak_ocr_threads
+?? app/services/planilha_produto_service.py.bak_ocr_threads_1x1
+?? app/services/planilha_produto_service.py.bak_tesseract_20261111_234049
+?? app/services/planilha_produto_service.py.bak_trava_ocr_20261111_230858
+?? app/static/js/ia-upload.js.bak_20261111_223644
+?? app/templates/gastos/novo.html.bak_20261111_223644
+?? app/templates/receitas/novo.html.bak_20261111_223644
+?? auditoria_ocr_memoria.txt
+?? extrator_nota.py.bak_trava_ocr_20261111_230858
+?? requirements.txt.bak_tesseract_20261111_234049
+?? run.py.bak_tesseract_20261112
+596b793 (HEAD -> master, origin/master) Protege processamento OCR contra concorrencia e falhas
+569e51c Corrige limites de upload e instrumenta memoria do OCR
+badcfd8 perf: adiciona diagnostico de recursos do OCR
+0013ab1 chore: adiciona instrumentacao de desempenho do OCR
+4b52f04 fix: configura limite de upload no Flask
+
+
+==================================================
+ARQUIVO: run.py
+==================================================
+import logging
+import os
+import threading
+import webbrowser
+
+from app import create_app, db
+from app.models.categoria import Categoria
+
+
+app = create_app()
+logger = logging.getLogger(__name__)
+
+
+def registrar_versoes_ocr():
+    """Registra versÃµes sem carregar o mecanismo/modelo OCR na memÃ³ria."""
+    import importlib.metadata
+    import platform
+
+    logger.info("========== DIAGNOSTICO OCR ==========")
+    logger.info("Python: %s", platform.python_version())
+
+    bibliotecas = (
+        "rapidocr-onnxruntime",
+        "onnxruntime",
+        "numpy",
+        "opencv-python",
+        "Pillow",
+    )
+
+    for biblioteca in bibliotecas:
+        try:
+            versao = importlib.metadata.version(biblioteca)
+            logger.info("%s: %s", biblioteca, versao)
+        except importlib.metadata.PackageNotFoundError:
+            logger.warning("%s: NAO INSTALADO", biblioteca)
+
+    logger.info("=====================================")
+
+
+def seed_categorias():
+    """Insere categorias padrÃ£o se o banco estiver vazio."""
+    try:
+        if Categoria.query.count() == 0:
+            categorias_padrao = [
+                "Ingredientes",
+                "Embalagens",
+                "Transporte",
+                "Contas Fixas",
+                "Equipamentos",
+                "Marketing",
+                "Outros",
+            ]
+            for nome in categorias_padrao:
+                db.session.add(Categoria(nome_categoria=nome))
+            db.session.commit()
+            logger.info("Categorias padrÃ£o criadas.")
+    finally:
+        db.session.remove()
+
+
+def abrir_navegador():
+    """Abre o navegador apenas no desenvolvimento local."""
+    try:
+        webbrowser.open("http://127.0.0.1:5000")
+    except Exception:
+        logger.debug("NÃ£o foi possÃ­vel abrir o navegador automaticamente.", exc_info=True)
+
+
+def _aquecer_ocr():
+    """Aquecimento opcional; nÃ£o habilitar em instÃ¢ncias com pouca RAM."""
+    try:
+        from app.services import planilha_produto_service as svc
+        svc._obter_ocr_engine()
+    except Exception:
+        logger.exception("Aquecimento OCR nÃ£o concluÃ­do.")
+
+
+registrar_versoes_ocr()
+
+with app.app_context():
+    try:
+        seed_categorias()
+    except Exception:
+        logger.exception("Seed de categorias nÃ£o concluÃ­do.")
+
+# Por padrÃ£o, nÃ£o inicializa o modelo OCR na partida. Em instÃ¢ncias com 512 MB,
+# mantenha OCR_AQUECER=0 para evitar carregar o modelo sem uma solicitaÃ§Ã£o real.
+if os.environ.get("OCR_AQUECER", "0") == "1":
+    logger.warning("OCR_AQUECER=1: o modelo OCR serÃ¡ carregado durante a inicializaÃ§Ã£o.")
+    threading.Thread(target=_aquecer_ocr, daemon=True, name="ocr-warmup").start()
+
+
+if __name__ == "__main__":
+    # O Render usa Gunicorn; este bloco serve apenas para execuÃ§Ã£o local.
+    if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        threading.Timer(1.5, abrir_navegador).start()
+    app.run(host="127.0.0.1", port=5000, debug=False)
+
+
+
+==================================================
+ARQUIVO: requirements.txt
+==================================================
+
+Flask==3.1.3
+Flask-SQLAlchemy==3.1.1
+Flask-WTF==1.2.1
+Flask-Limiter==3.8.0
+Flask-Migrate==4.0.7
+Werkzeug==3.1.9
+SQLAlchemy==2.0.43
+psycopg2-binary==2.9.13
+
+reportlab==4.5.0
+python-dotenv==1.2.2
+google-generativeai>=0.8.0
+
+pandas>=2.2.0
+openpyxl>=3.1.2
+pdfplumber>=0.11.0
+pypdf>=5.0.0
+
+rapidocr-onnxruntime==1.4.4
+onnxruntime==1.31.1
+numpy==2.5.4
+opencv-python==5.0.0.93
+Pillow==13.0.0
+
+requests>=2.30.0
+python-dateutil>=2.8.0
+Flask-Cors>=4.0.0
+gunicorn>=22.0.0
+
+
+
+==================================================
+ARQUIVO: render.yaml
+==================================================
+services:
+  - type: web
+    name: doce-como-mel
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn run:app --timeout 120 --workers 1 --threads 2
+
+
+
+==================================================
+ARQUIVO: Procfile
+==================================================
+[ARQUIVO NAO EXISTE]
+
+
+==================================================
+ARQUIVO: app/__init__.py
+==================================================
+import os
+import logging
+from flask import Flask, send_from_directory, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_migrate import Migrate
+from flask_cors import CORS
+from config import Config
+from flask import request
+from flask_wtf.csrf import CSRFError
+from werkzeug.exceptions import RequestEntityTooLarge
+
+db = SQLAlchemy()
+csrf = CSRFProtect()
+limiter = Limiter(key_func=get_remote_address, default_limits=[], storage_uri="memory://")
+migrate = Migrate()
+cors = CORS()
+
+# Logging bÃ¡sico
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+def create_app():
+    import os
+    app = Flask(__name__)
+    app.config.from_object(Config)
+
+    # ConfiguraÃ§Ã£o de limite de tamanho do conteÃºdo do upload
+    app.config['MAX_CONTENT_LENGTH'] = 17 * 1024 * 1024
+
+    db.init_app(app)
+    csrf.init_app(app)
+    limiter.init_app(app)
+    migrate.init_app(app, db)
+    
+    # Tratamento para RequestEntityTooLarge
+    @app.errorhandler(RequestEntityTooLarge)
+    def handle_request_entity_too_large(e):
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
+            return jsonify({'sucesso': False, 'erro': 'O envio excedeu o limite mÃ¡ximo permitido pelo servidor.'}), 413
+        return 'O envio excedeu o limite mÃ¡ximo permitido pelo servidor.', 413
+
+    # â”€â”€ DiagnÃ³stico temporÃ¡rio de erros CSRF â”€â”€
+    @app.errorhandler(CSRFError)
+    def tratar_erro_csrf(e):
+        logger.error(
+            "ERRO CSRF | "
+            f"Rota: {request.path} | "
+            f"MÃ©todo: {request.method} | "
+            f"Motivo: {e.description} | "
+            f"Campo CSRF recebido: {'csrf_token' in request.form} | "
+            f"Cookie de sessÃ£o recebido: {'session' in request.cookies}"
+        )
+
+        return "Erro de seguranÃ§a CSRF. Consulte os logs.", 400
+    
+
+    # â”€â”€ Suporte a Reverse Proxy / HTTPS em ProduÃ§Ã£o (Render / Nuvem) â”€â”€â”€â”€â”€â”€â”€
+    if app.config.get('SESSION_COOKIE_SECURE') or os.getenv('RENDER'):
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+    # â”€â”€ ConfiguraÃ§Ã£o de CORS (mantÃ©m origens existentes e adiciona Capacitor/localhost) â”€â”€
+    cors_origins_env = app.config.get('CORS_ORIGINS') or os.getenv('CORS_ORIGINS', '')
+    default_origins = [
+        'http://localhost',
+        'capacitor://localhost',
+        'http://localhost:5000',
+        'http://127.0.0.1:5000',
+        'http://localhost:8100'
+    ]
+    if cors_origins_env == '*':
+        cors.init_app(app, resources={r"/*": {"origins": "*"}})
+    else:
+        if cors_origins_env:
+            extra_origins = [o.strip() for o in cors_origins_env.split(',') if o.strip()]
+            allowed_origins = list(dict.fromkeys(default_origins + extra_origins))
+        else:
+            allowed_origins = default_origins
+
+        cors.init_app(
+            app,
+            resources={r"/*": {"origins": allowed_origins}},
+            supports_credentials=True,
+            allow_headers=["Content-Type", "Authorization", "X-CSRFToken", "X-Requested-With"],
+            methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+        )
+
+    # Importa os models para que o SQLAlchemy os registre antes do create_all
+    from app.models import Usuario, Categoria, Gasto, Receita
+    from app.models.meta import Meta
+    from app.models.meta_receita import MetaReceita
+
+    # Registra os blueprints (rotas)
+    from app.routes.auth import auth_bp
+    from app.routes.gastos import gastos_bp
+    from app.routes.dashboard import dashboard_bp
+    from app.routes.receitas import receitas_bp
+    from app.routes.categorias import categorias_bp
+    from app.routes.metas import metas_bp
+    from app.routes.relatorios import relatorios_bp
+    from app.routes.ia_fiscal import ia_fiscal_bp
+    from app.routes.reajuste_ipca import reajuste_ipca_bp
+    # from app.routes.precificacao import precificacao_bp
+    from app.routes.ia_chat import ia_chat_bp
+    from app.routes.comprovantes import comprovantes_bp
+    from app.routes.metas_receita import metas_receita_bp
+    # from app.routes.usuarios import usuarios_bp
+
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(gastos_bp)
+    app.register_blueprint(dashboard_bp)
+    app.register_blueprint(receitas_bp)
+    app.register_blueprint(categorias_bp)
+    app.register_blueprint(metas_bp)
+    app.register_blueprint(relatorios_bp)
+    app.register_blueprint(ia_fiscal_bp)
+    app.register_blueprint(reajuste_ipca_bp)
+    # app.register_blueprint(precificacao_bp)
+    app.register_blueprint(ia_chat_bp)
+    app.register_blueprint(comprovantes_bp)
+    app.register_blueprint(metas_receita_bp)
+    # app.register_blueprint(usuarios_bp)
+
+    with app.app_context():
+        import os
+        # Cria a pasta de comprovantes de forma robusta, sem caminhos absolutos fixos.
+        _upload_dir = app.config.get('UPLOAD_COMPROVANTES_DIR') or os.path.join(
+            app.config.get('BASE_DIR', os.path.dirname(os.path.dirname(__file__))),
+            'uploads', 'comprovantes'
+        )
+        os.makedirs(_upload_dir, exist_ok=True)
+        db.create_all()
+
+        # â”€â”€ MigraÃ§Ãµes suaves de colunas novas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        try:
+            from sqlalchemy import inspect, text
+            inspector = inspect(db.engine)
+
+            # â”€â”€ tabela receita â”€â”€
+            cols_receita = [c['name'] for c in inspector.get_columns('receita')]
+            _add_col_if_missing(db, cols_receita, 'receita', 'tipo_receita', "VARCHAR(50) DEFAULT 'Venda'")
+            _add_col_if_missing(db, cols_receita, 'receita', 'comprovante', "VARCHAR(255)")
+
+            # â”€â”€ tabela gasto â”€â”€
+            cols_gasto = [c['name'] for c in inspector.get_columns('gasto')]
+            _add_col_if_missing(db, cols_gasto, 'gasto', 'parcela_atual', "INTEGER DEFAULT 1")
+            _add_col_if_missing(db, cols_gasto, 'gasto', 'total_parcelas', "INTEGER DEFAULT 1")
+            _add_col_if_missing(db, cols_gasto, 'gasto', 'id_parcelamento', "VARCHAR(36)")
+            _add_col_if_missing(db, cols_gasto, 'gasto', 'comprovante', "VARCHAR(255)")
+            _add_col_if_missing(db, cols_gasto, 'gasto', 'is_recorrente', "BOOLEAN NOT NULL DEFAULT 0")
+            _add_col_if_missing(db, cols_gasto, 'gasto', 'dia_recorrencia', "INTEGER")
+            _add_col_if_missing(db, cols_gasto, 'gasto', 'is_pago', "BOOLEAN NOT NULL DEFAULT 1")
+
+            # â”€â”€ tabela categoria â”€â”€
+            cols_cat = [c['name'] for c in inspector.get_columns('categoria')]
+            _add_col_if_missing(db, cols_cat, 'categoria', 'id_categoria_pai',
+                                "INTEGER REFERENCES categoria(id_categoria)")
+
+            # â”€â”€ tabela usuario â”€â”€
+            cols_usr = [c['name'] for c in inspector.get_columns('usuario')]
+            _add_col_if_missing(db, cols_usr, 'usuario', 'perfil', "VARCHAR(20) NOT NULL DEFAULT 'admin'")
+            _add_col_if_missing(db, cols_usr, 'usuario', 'id_usuario_pai',
+                                "INTEGER REFERENCES usuario(id_usuario)")
+
+        except Exception as e:
+            logger.warning(f"Aviso ao verificar esquema: {e}")
+
+    # â”€â”€ Rota autenticada para servir comprovantes anexados â”€â”€
+    @app.route('/comprovantes/<path:filename>')
+    def servir_comprovante(filename):
+        from flask import send_from_directory, abort, session
+        if 'id_usuario' not in session:
+            abort(401)
+        safe_filename = os.path.basename(filename)
+        return send_from_directory(app.config['UPLOAD_COMPROVANTES_DIR'], safe_filename)
+
+    # â”€â”€ PWA: manifest e service worker â”€â”€
+    @app.route('/manifest.json')
+    def pwa_manifest():
+        from flask import send_from_directory
+        return send_from_directory(app.static_folder, 'manifest.json')
+
+    @app.route('/sw.js')
+    def service_worker():
+        from flask import send_from_directory
+        return send_from_directory(app.static_folder, 'sw.js')
+
+    @app.route('/favicon.ico')
+    def favicon():
+        import os
+        from flask import send_from_directory
+        return send_from_directory(os.path.join(app.static_folder, 'img'), 'favicon.ico')
+
+    # â”€â”€ Keep-alive / Health Check (PÃºblico, sem auth, sem rate limit e sem banco) â”€â”€
+    @app.route('/health', methods=['GET'])
+    @limiter.exempt
+    @csrf.exempt
+    def health():
+        return jsonify({'status': 'ok'}), 200
+
+    return app
+
+
+def _add_col_if_missing(db, existing_cols: list, table: str, col: str, col_def: str):
+    """Adiciona uma coluna Ã  tabela se ela ainda nÃ£o existir (migration suave)."""
+    if col not in existing_cols:
+        try:
+            with db.engine.begin() as conn:
+                conn.execute(__import__('sqlalchemy').text(
+                    f"ALTER TABLE {table} ADD COLUMN {col} {col_def}"
+                ))
+            logger.info(f"Coluna '{col}' adicionada Ã  tabela '{table}'.")
+        except Exception as e:
+            logger.warning(f"NÃ£o foi possÃ­vel adicionar '{col}' em '{table}': {e}")
+
+
+
+==================================================
+ARQUIVO: app/services/planilha_produto_service.py
+==================================================
+import io
+import os
+import math
+import re
+import logging
+import time
+from datetime import datetime
+import numpy as np
+import pandas as pd
+import pdfplumber
+from PIL import Image, ImageOps
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import (
+    SimpleDocTemplate, Table, TableStyle, Paragraph
+)
+from reportlab.lib.units import cm
+from reportlab.pdfgen import canvas
+
+from app.services.bacen_service import BacenService
+
+logger = logging.getLogger(__name__)
+
+# InstÃ¢ncia preguiÃ§osa do RapidOCR para processar imagens/prints locais
+import threading as _threading
+import hashlib
+from collections import OrderedDict
+
+_OCR_LOCK = _threading.Lock()
+_OCR_INFERENCE_LOCK = _threading.Lock()
+
+class OCROcupadoError(RuntimeError):
+    pass
+
+_OCR_PIPELINE_LOCK = _threading.Lock()
+_OCR_ENGINE = None
+
+# Cache LRU de OCR indexado por SHA-256 do arquivo (mÃ¡x. 8 entradas)
+_OCR_CACHE = OrderedDict()
+_OCR_CACHE_LOCK = _threading.Lock()
+_OCR_CACHE_MAX = 8
+
+
+def _obter_ocr_cache(chave: str):
+    with _OCR_CACHE_LOCK:
+        if chave in _OCR_CACHE:
+            _OCR_CACHE.move_to_end(chave)
+            return _OCR_CACHE[chave]
+    return None
+
+
+def _salvar_ocr_cache(chave: str, valor):
+    with _OCR_CACHE_LOCK:
+        _OCR_CACHE[chave] = valor
+        _OCR_CACHE.move_to_end(chave)
+        if len(_OCR_CACHE) > _OCR_CACHE_MAX:
+            _OCR_CACHE.popitem(last=False)
+
+# Linha de lista de preÃ§os lida por OCR. Aceita variaÃ§Ãµes reais do OCR:
+#   "â€¢ Banoffe - 10,95" | "Banoffe-10.95" | "Gelatina diet de amora -5,78" | "Banoffe R$ 10,42"
+# O preÃ§o Ã© capturado SEM sinal: um "-" colado no preÃ§o Ã© separador, nÃ£o nÃºmero negativo.
+_LINHA_PRODUTO_PRECO = re.compile(
+    r'^[\sâ€¢Â·.:+*\-â€“â€”]*(?P<nome>[^\d\s].*?)\s*[-â€“â€”:]?\s*(?:R\$\s*)?'
+    r'(?P<preco>\d{1,3}(?:\.\d{3})*,\d{2}|\d+[.,]\d{2})\s*$'
+)
+# Fallback: Ãºltimo valor monetÃ¡rio da linha (tabelas com colunas extras depois do preÃ§o)
+_PRECO_QUALQUER = re.compile(r'(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+[.,]\d{2})(?!\d)')
+
+
+def _obter_ocr_engine():
+    with _OCR_LOCK:
+        return _criar_ocr_engine()
+
+
+def _executar_ocr(imagem):
+    _registrar_memoria_ocr("antes_motor")
+
+    inicio_engine = time.perf_counter()
+    engine = _obter_ocr_engine()
+    tempo_engine = time.perf_counter() - inicio_engine
+
+    _registrar_memoria_ocr("apos_motor")
+
+    inicio_inferencia = time.perf_counter()
+
+    try:
+        with _OCR_INFERENCE_LOCK:
+            try:
+                resultado = engine(imagem, use_cls=False)
+            except TypeError:
+                resultado = engine(imagem)
+
+        return resultado
+
+    finally:
+        tempo_inferencia = time.perf_counter() - inicio_inferencia
+
+        _registrar_memoria_ocr("apos_inferencia")
+
+        logger.info(
+            "OCR | Motor disponivel: %.2fs | Inferencia: %.2fs | "
+            "Imagem: %s x %s | Memoria da matriz: %.2f MB",
+            tempo_engine,
+            tempo_inferencia,
+            imagem.shape[1],
+            imagem.shape[0],
+            imagem.nbytes / (1024 * 1024)
+        )
+
+
+def _registrar_memoria_ocr(etapa):
+    """Registra o consumo de memoria em uma etapa do OCR."""
+    from pathlib import Path
+
+    memoria_processo = "N/D"
+    uso_container = "N/D"
+    limite_container = "N/D"
+
+    try:
+        status = Path("/proc/self/status")
+        if status.exists():
+            for linha in status.read_text().splitlines():
+                if linha.startswith("VmRSS:"):
+                    memoria_processo = round(
+                        int(linha.split()[1]) / 1024, 2
+                    )
+                    break
+    except Exception:
+        pass
+
+    try:
+        uso = Path("/sys/fs/cgroup/memory.current")
+        limite = Path("/sys/fs/cgroup/memory.max")
+
+        if uso.exists():
+            uso_container = round(
+                int(uso.read_text().strip()) / (1024 ** 2), 2
+            )
+
+        if limite.exists():
+            valor = limite.read_text().strip()
+            if valor != "max":
+                limite_container = round(
+                    int(valor) / (1024 ** 2), 2
+                )
+        else:
+            uso_v1 = Path(
+                "/sys/fs/cgroup/memory/memory.usage_in_bytes"
+            )
+            limite_v1 = Path(
+                "/sys/fs/cgroup/memory/memory.limit_in_bytes"
+            )
+
+            if uso_v1.exists():
+                uso_container = round(
+                    int(uso_v1.read_text().strip()) / (1024 ** 2), 2
+                )
+
+            if limite_v1.exists():
+                limite_container = round(
+                    int(limite_v1.read_text().strip()) / (1024 ** 2), 2
+                )
+
+    except Exception:
+        pass
+
+    logger.info(
+        "OCR | Memoria | Etapa: %s | "
+        "RAM processo: %s MB | "
+        "Uso container: %s MB | "
+        "Limite container: %s MB",
+        etapa,
+        memoria_processo,
+        uso_container,
+        limite_container
+    )
+
+
+def _registrar_diagnostico_recursos_ocr():
+    """Registra recursos de CPU e memoria disponiveis para o OCR."""
+    import multiprocessing
+    import platform
+    from pathlib import Path
+
+    sistema = platform.system()
+    cpus = multiprocessing.cpu_count()
+    afinidade = "N/D"
+    quota_cpu = "N/D"
+    memoria_total = "N/D"
+    memoria_disponivel = "N/D"
+    memoria_processo = "N/D"
+    limite_container = "N/D"
+    uso_container = "N/D"
+
+    try:
+        if hasattr(os, "sched_getaffinity"):
+            afinidade = len(os.sched_getaffinity(0))
+    except Exception:
+        pass
+
+    try:
+        cpu_max = Path("/sys/fs/cgroup/cpu.max")
+        if cpu_max.exists():
+            valores = cpu_max.read_text().strip().split()
+            if len(valores) == 2 and valores[0] != "max":
+                quota_cpu = round(int(valores[0]) / int(valores[1]), 2)
+        else:
+            quota = Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us")
+            periodo = Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us")
+            if quota.exists() and periodo.exists():
+                q = int(quota.read_text().strip())
+                p = int(periodo.read_text().strip())
+                if q > 0 and p > 0:
+                    quota_cpu = round(q / p, 2)
+    except Exception:
+        pass
+
+    try:
+        meminfo = Path("/proc/meminfo")
+        if meminfo.exists():
+            dados = {}
+            for linha in meminfo.read_text().splitlines():
+                partes = linha.split()
+                if len(partes) >= 2:
+                    dados[partes[0].rstrip(":")] = int(partes[1])
+
+            if "MemTotal" in dados:
+                memoria_total = round(dados["MemTotal"] / 1024, 2)
+
+            if "MemAvailable" in dados:
+                memoria_disponivel = round(dados["MemAvailable"] / 1024, 2)
+    except Exception:
+        pass
+
+    try:
+        status = Path("/proc/self/status")
+        if status.exists():
+            for linha in status.read_text().splitlines():
+                if linha.startswith("VmRSS:"):
+                    memoria_processo = round(
+                        int(linha.split()[1]) / 1024, 2
+                    )
+                    break
+    except Exception:
+        pass
+
+    try:
+        limite = Path("/sys/fs/cgroup/memory.max")
+        uso = Path("/sys/fs/cgroup/memory.current")
+
+        if limite.exists():
+            valor = limite.read_text().strip()
+            if valor != "max":
+                limite_container = round(int(valor) / (1024 ** 2), 2)
+
+        if uso.exists():
+            uso_container = round(
+                int(uso.read_text().strip()) / (1024 ** 2), 2
+            )
+        else:
+            limite_v1 = Path("/sys/fs/cgroup/memory/memory.limit_in_bytes")
+            uso_v1 = Path("/sys/fs/cgroup/memory/memory.usage_in_bytes")
+
+            if limite_v1.exists():
+                limite_container = round(
+                    int(limite_v1.read_text().strip()) / (1024 ** 2), 2
+                )
+
+            if uso_v1.exists():
+                uso_container = round(
+                    int(uso_v1.read_text().strip()) / (1024 ** 2), 2
+                )
+    except Exception:
+        pass
+
+    logger.info(
+        "OCR | Recursos | Sistema: %s | CPUs detectadas: %s | "
+        "Afinidade CPU: %s | Quota CPU: %s | "
+        "Memoria total: %s MB | Memoria disponivel: %s MB | "
+        "RAM processo: %s MB | Limite container: %s MB | "
+        "Uso container: %s MB",
+        sistema,
+        cpus,
+        afinidade,
+        quota_cpu,
+        memoria_total,
+        memoria_disponivel,
+        memoria_processo,
+        limite_container,
+        uso_container
+    )
+
+
+def _criar_ocr_engine():
+    global _OCR_ENGINE
+
+    if _OCR_ENGINE is None:
+        inicio = time.perf_counter()
+
+        try:
+            _registrar_diagnostico_recursos_ocr()
+
+            from rapidocr_onnxruntime import RapidOCR
+
+            threads_intra = int(os.getenv("OCR_INTRA_OP_THREADS", "-1"))
+            threads_inter = int(os.getenv("OCR_INTER_OP_THREADS", "-1"))
+
+            _OCR_ENGINE = RapidOCR(
+                intra_op_num_threads=threads_intra,
+                inter_op_num_threads=threads_inter
+            )
+
+            tempo = time.perf_counter() - inicio
+
+            logger.info(
+                "OCR | RapidOCR inicializado em %.2fs | "
+                "Threads intra: %s | Threads inter: %s",
+                tempo,
+                threads_intra,
+                threads_inter
+            )
+
+        except Exception as e:
+            logger.exception(
+                "Nao foi possivel inicializar RapidOCR"
+            )
+            raise RuntimeError(
+                f"Motor de OCR nao disponivel: {e}"
+            ) from e
+
+    return _OCR_ENGINE
+
+
+class NumberedCanvas(canvas.Canvas):
+    """Canvas com numeraÃ§Ã£o de pÃ¡ginas 'PÃ¡gina X de Y' no rodapÃ©."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_page_number(num_pages)
+            canvas.Canvas.showPage(self)
+        canvas.Canvas.save(self)
+
+    def draw_page_number(self, page_count):
+        self.saveState()
+        self.setFont("Helvetica", 8)
+        self.setFillColor(colors.HexColor("#64748b"))
+
+        self.setStrokeColor(colors.HexColor("#e2e8f0"))
+        self.setLineWidth(0.5)
+        self.line(1.5 * cm, 1.0 * cm, self._pagesize[0] - 1.5 * cm, 1.0 * cm)
+
+        texto_esq = f"Doce como Mel â€” Tabela de PreÃ§os com CorreÃ§Ã£o IPCA Oficial (BACEN SGS 433) | Gerado em {datetime.now().strftime('%d/%m/%Y Ã s %H:%M')}"
+        texto_dir = f"PÃ¡gina {self._pageNumber} de {page_count}"
+
+        self.drawString(1.5 * cm, 0.65 * cm, texto_esq)
+        self.drawRightString(self._pagesize[0] - 1.5 * cm, 0.65 * cm, texto_dir)
+        self.restoreState()
+
+
+class PlanilhaProdutoService:
+    # VariaÃ§Ãµes comuns de nomes de colunas
+    COLUNAS_PRODUTO_ALIASES = [
+        'produto', 'nome', 'descricao', 'descriÃ§Ã£o', 'item', 'titulo',
+        'mercadoria', 'artigo', 'servico', 'serviÃ§o', 'especificacao',
+        'especificaÃ§Ã£o', 'nome_produto', 'nome do produto', 'produtos'
+    ]
+
+    COLUNAS_PRECO_ALIASES = [
+        'preco', 'preÃ§o', 'valor', 'preco_venda', 'preÃ§o_venda',
+        'preco_unitario', 'preÃ§o_unitÃ¡rio', 'preco_atual', 'preÃ§o_atual',
+        'valor_unitario', 'valor_unitÃ¡rio', 'valor_venda', 'preco_tabela',
+        'custo', 'preco_custo', 'preco_original', 'preÃ§o_original',
+        'precos', 'preÃ§os', 'valores'
+    ]
+
+    COLUNAS_CODIGO_ALIASES = [
+        'codigo', 'cÃ³digo', 'id', 'cod', 'sku', 'ref', 'referencia', 'referÃªncia'
+    ]
+
+    COLUNAS_CATEGORIA_ALIASES = [
+        'categoria', 'tipo', 'grupo', 'departamento', 'secao', 'seÃ§Ã£o', 'linha'
+    ]
+
+    @classmethod
+    def normalizar_texto(cls, texto) -> str:
+        """Remove acentos e caracteres especiais para comparaÃ§Ã£o flexÃ­vel."""
+        if isinstance(texto, (pd.Series, list, tuple)):
+            texto = texto[0] if len(texto) > 0 else ''
+        if not isinstance(texto, str):
+            texto = str(texto) if (texto is not None and pd.notna(texto)) else ''
+        t = texto.strip().lower()
+        t = re.sub(r'[Ã¡Ã Ã¢Ã£Ã¤]', 'a', t)
+        t = re.sub(r'[Ã©Ã¨ÃªÃ«]', 'e', t)
+        t = re.sub(r'[Ã­Ã¬Ã®Ã¯]', 'i', t)
+        t = re.sub(r'[Ã³Ã²Ã´ÃµÃ¶]', 'o', t)
+        t = re.sub(r'[ÃºÃ¹Ã»Ã¼]', 'u', t)
+        t = re.sub(r'[Ã§]', 'c', t)
+        t = re.sub(r'[^a-z0-9]', '', t)
+        return t
+
+    @classmethod
+    def deduplicar_colunas(cls, colunas) -> list[str]:
+        """Garante que todos os nomes de colunas sejam strings Ãºnicas e limpas."""
+        contagem = {}
+        novas = []
+        for i, c in enumerate(colunas):
+            if c is not None and not (isinstance(c, float) and math.isnan(c)) and str(c).strip() != '':
+                nome = str(c).strip()
+            else:
+                nome = f"Coluna_{i+1}"
+
+            if nome in contagem:
+                contagem[nome] += 1
+                novas.append(f"{nome}_{contagem[nome]}")
+            else:
+                contagem[nome] = 0
+                novas.append(nome)
+        return novas
+
+    @classmethod
+    def _obter_escalar(cls, val, default: str = "") -> str:
+        """Garante retorno de string escalar segura, desempacotando Series caso ocorra."""
+        if isinstance(val, (pd.Series, list, tuple)):
+            for v in val:
+                if v is not None and not pd.isna(v) and str(v).strip() != '':
+                    return str(v).strip()
+            return default
+        if val is None or pd.isna(val):
+            return default
+        s = str(val).strip()
+        return s if s != '' else default
+
+    @classmethod
+    def identificar_colunas(cls, colunas: list[str]) -> dict:
+        """
+        Identifica automaticamente quais colunas correspondem a Produto, PreÃ§o, CÃ³digo e Categoria.
+        """
+        mapeamento = {
+            'produto': None,
+            'preco': None,
+            'codigo': None,
+            'categoria': None
+        }
+
+        colunas_norm = {col: cls.normalizar_texto(col) for col in colunas}
+
+        # 1. Procura Coluna de PreÃ§o (prioritÃ¡rio)
+        for col_orig, col_n in colunas_norm.items():
+            for alias in cls.COLUNAS_PRECO_ALIASES:
+                if cls.normalizar_texto(alias) == col_n or cls.normalizar_texto(alias) in col_n:
+                    mapeamento['preco'] = col_orig
+                    break
+            if mapeamento['preco']:
+                break
+
+        # 2. Procura Coluna de Produto
+        for col_orig, col_n in colunas_norm.items():
+            if col_orig == mapeamento['preco']:
+                continue
+            for alias in cls.COLUNAS_PRODUTO_ALIASES:
+                if cls.normalizar_texto(alias) == col_n or cls.normalizar_texto(alias) in col_n:
+                    mapeamento['produto'] = col_orig
+                    break
+            if mapeamento['produto']:
+                break
+
+        # 3. Procura CÃ³digo (opcional)
+        for col_orig, col_n in colunas_norm.items():
+            if col_orig in (mapeamento['preco'], mapeamento['produto']):
+                continue
+            for alias in cls.COLUNAS_CODIGO_ALIASES:
+                if cls.normalizar_texto(alias) == col_n:
+                    mapeamento['codigo'] = col_orig
+                    break
+            if mapeamento['codigo']:
+                break
+
+        # 4. Procura Categoria (opcional)
+        for col_orig, col_n in colunas_norm.items():
+            if col_orig in (mapeamento['preco'], mapeamento['produto'], mapeamento['codigo']):
+                continue
+            for alias in cls.COLUNAS_CATEGORIA_ALIASES:
+                if cls.normalizar_texto(alias) == col_n:
+                    mapeamento['categoria'] = col_orig
+                    break
+            if mapeamento['categoria']:
+                break
+
+        # Fallback se nÃ£o encontrou coluna de produto, usa a primeira coluna nÃ£o de preÃ§o
+        if not mapeamento['produto'] and colunas:
+            for c in colunas:
+                if c != mapeamento['preco']:
+                    mapeamento['produto'] = c
+                    break
+
+        return mapeamento
+
+    @classmethod
+    def converter_valor_monetario(cls, valor) -> float | None:
+        """
+        Converte string, nÃºmero ou item de Series para float.
+        Ex: 'R$ 1.250,50' -> 1250.50, '15,90' -> 15.90, 15.9 -> 15.9
+        """
+        if isinstance(valor, (pd.Series, list, tuple)):
+            for v in valor:
+                res = cls.converter_valor_monetario(v)
+                if res is not None:
+                    return res
+            return None
+
+        if valor is None or pd.isna(valor):
+            return None
+
+        if isinstance(valor, (int, float)):
+            return float(valor)
+
+        texto = str(valor).strip()
+        if not texto:
+            return None
+
+        texto = texto.replace('R$', '').replace('r$', '').replace('\xa0', '').strip()
+
+        if ',' in texto:
+            texto = texto.replace('.', '')
+            texto = texto.replace(',', '.')
+        else:
+            if re.search(r'\d+,\d{3}', texto):
+                texto = texto.replace(',', '')
+
+        try:
+            val = float(re.sub(r'[^\d.-]', '', texto))
+            return val
+        except (ValueError, TypeError):
+            return None
+
+    @classmethod
+    def aplicar_regra_arredondamento(cls, valor: float, regra: str = 'padrao') -> float:
+        """
+        Aplica regras de precificaÃ§Ã£o mercadolÃ³gica:
+        - 'padrao': 2 casas decimais normais (ex: R$ 15,48)
+        - 'termina_99': arredonda para centavos .99 (ex: R$ 15,99)
+        - 'termina_90': arredonda para centavos .90 (ex: R$ 15,90)
+        - 'inteiro': nÃºmero inteiro mais prÃ³ximo (ex: R$ 15,00)
+        """
+        if regra == 'termina_99':
+            if valor <= 1.0:
+                return round(valor, 2)
+            base = math.floor(valor)
+            if (valor - base) > 0.99:
+                return float(base + 1.99)
+            return float(base + 0.99)
+
+        elif regra == 'termina_90':
+            if valor <= 1.0:
+                return round(valor, 2)
+            base = math.floor(valor)
+            if (valor - base) > 0.90:
+                return float(base + 1.90)
+            return float(base + 0.90)
+
+        elif regra == 'inteiro':
+            return float(round(valor))
+
+        return round(valor, 2)
+
+    @classmethod
+    def _validar_mes_vigencia(cls, mes_vigencia: str | None) -> tuple[int, int]:
+        """
+        Converte 'AAAA-MM' (formato do <input type="month">) em (ano, mes).
+        Sem valor, usa o mÃªs atual.
+        """
+        if not mes_vigencia:
+            agora = datetime.now()
+            return agora.year, agora.month
+        try:
+            ano_str, mes_str = str(mes_vigencia).strip().split('-')
+            ano, mes = int(ano_str), int(mes_str)
+            if 1 <= mes <= 12 and 2000 <= ano <= 2100:
+                return ano, mes
+        except ValueError:
+            pass
+        raise ValueError("MÃªs de vigÃªncia invÃ¡lido. Use o formato AAAA-MM (ex.: 2026-11).")
+
+    @classmethod
+    def _detectar_e_ajustar_cabecalho(cls, df_raw: pd.DataFrame) -> pd.DataFrame:
+        """
+        Identifica em qual linha estÃ¡ o cabeÃ§alho real caso haja banners, tÃ­tulos ou linhas vazias antes da tabela.
+        Garante que todos os nomes de colunas sejam strings deduplicadas.
+        """
+        if df_raw.empty:
+            return df_raw
+
+        max_linhas = min(12, len(df_raw))
+        melhor_linha = -1
+        max_matches = 0
+
+        aliases_todos = cls.COLUNAS_PRECO_ALIASES + cls.COLUNAS_PRODUTO_ALIASES + cls.COLUNAS_CODIGO_ALIASES
+
+        for idx in range(max_linhas):
+            row_vals = [cls.normalizar_texto(v) for v in df_raw.iloc[idx]]
+            matches = sum(1 for val in row_vals if any(cls.normalizar_texto(a) == val or cls.normalizar_texto(a) in val for a in aliases_todos))
+            if matches > max_matches:
+                max_matches = matches
+                melhor_linha = idx
+
+        if melhor_linha >= 0 and max_matches > 0:
+            raw_cols = df_raw.iloc[melhor_linha].tolist()
+            novas_colunas = cls.deduplicar_colunas(raw_cols)
+            df_ajustado = df_raw.iloc[melhor_linha + 1:].reset_index(drop=True)
+            df_ajustado.columns = novas_colunas
+
+            # Se alguma linha de dados for repetiÃ§Ã£o do cabeÃ§alho, descarta
+            filtro = []
+            for _, r in df_ajustado.iterrows():
+                r_vals = [str(v).strip() for v in r.tolist()]
+                if r_vals == [str(c).strip() for c in raw_cols]:
+                    filtro.append(False)
+                else:
+                    filtro.append(True)
+            df_ajustado = df_ajustado[filtro].reset_index(drop=True)
+            return df_ajustado
+
+        primeira_linha = df_raw.iloc[0].tolist()
+        tem_preco_linha_0 = any(cls.converter_valor_monetario(v) is not None for v in primeira_linha)
+        if tem_preco_linha_0:
+            if len(df_raw.columns) == 2:
+                novas_colunas = ['Produto', 'PreÃ§o']
+            elif len(df_raw.columns) == 3:
+                novas_colunas = ['CÃ³digo', 'Produto', 'PreÃ§o']
+            else:
+                novas_colunas = [f'Coluna_{i+1}' for i in range(len(df_raw.columns))]
+            df_raw.columns = cls.deduplicar_colunas(novas_colunas)
+            return df_raw
+        else:
+            df_raw.columns = cls.deduplicar_colunas(primeira_linha)
+            return df_raw.iloc[1:].reset_index(drop=True)
+
+    @classmethod
+    def _preparar_imagem_para_ocr(cls, conteudo: bytes):
+        """Abre a imagem, corrige a rotaÃ§Ã£o (fotos de celular) e amplia imagens pequenas.
+        Prints pequenos (ex.: 215 px de largura) perdem espaÃ§os e vÃ­rgulas no OCR sem isso."""
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(conteudo))).convert('RGB')
+        max_lado = int(os.getenv("OCR_MAX_LADO", "1600"))
+        if max(img.size) > max_lado:
+            img.thumbnail((max_lado, max_lado), Image.LANCZOS)
+        fator = min(3, max(1, round(max_lado / max(img.size))))
+        if fator > 1:
+            img = img.resize((img.width * fator, img.height * fator), Image.LANCZOS)
+        return np.array(img)
+
+    @classmethod
+    def ler_arquivo_imagem(cls, stream) -> pd.DataFrame:
+        """
+        Extrai produtos e preÃ§os de fotos e prints via OCR (RapidOCR).
+        Funciona para tabelas (produto e preÃ§o em caixas separadas) e para listas
+        em texto corrido ("Produto - 10,95"), onde o OCR devolve a linha inteira numa caixa sÃ³.
+        """
+        conteudo = stream.read()
+        stream.seek(0)
+
+        # Cache de OCR por SHA-256 do arquivo (mÃ¡x. 8 entradas)
+        hash_arquivo = hashlib.sha256(conteudo).hexdigest()
+        cached_df = _obter_ocr_cache(f"df_{hash_arquivo}")
+        if cached_df is not None:
+            logger.info("OCR | Reutilizando resultado do cache SHA-256: %s...", hash_arquivo[:12])
+            return cached_df.copy()
+
+        if not _OCR_PIPELINE_LOCK.acquire(blocking=False):
+            raise OCROcupadoError(
+                "O OCR esta processando outro documento. Aguarde alguns instantes e tente novamente."
+            )
+
+        try:
+            try:
+                inicio_preparacao = time.perf_counter()
+
+                imagem = cls._preparar_imagem_para_ocr(conteudo)
+
+                tempo_preparacao = time.perf_counter() - inicio_preparacao
+
+                logger.info(
+                    "OCR | Preparacao da imagem: %.2fs | Dimensoes: %s x %s | "
+                    "Memoria: %.2f MB | Arquivo original: %.2f KB",
+                    tempo_preparacao,
+                    imagem.shape[1],
+                    imagem.shape[0],
+                    imagem.nbytes / (1024 * 1024),
+                    len(conteudo) / 1024
+                )
+
+            except Exception:
+                raise ValueError(
+                    "Nao foi possivel abrir a imagem enviada. "
+                    "Envie um arquivo PNG, JPG ou WEBP valido."
+                )
+
+            try:
+                res, _ = _executar_ocr(imagem)
+            finally:
+                del imagem
+
+        finally:
+            _OCR_PIPELINE_LOCK.release()
+
+        if not res:
+            raise ValueError("NÃ£o foi possÃ­vel detectar texto ou nÃºmeros na imagem enviada. Certifique-se de que a imagem esteja nÃ­tida.")
+
+        caixas = []
+        for box, texto, *_ in res:
+            texto = str(texto).strip()
+            if not texto:
+                continue
+            ys = [p[1] for p in box]
+            xs = [p[0] for p in box]
+            caixas.append({'texto': texto, 'y': (min(ys) + max(ys)) / 2.0,
+                           'x': min(xs), 'h': max(ys) - min(ys)})
+        if not caixas:
+            raise ValueError("NÃ£o foi possÃ­vel detectar texto ou nÃºmeros na imagem enviada. Certifique-se de que a imagem esteja nÃ­tida.")
+
+        # TolerÃ¢ncia de "mesma linha" proporcional Ã  altura do texto (nÃ£o mais 18 px fixos)
+        altura_mediana = sorted(c['h'] for c in caixas)[len(caixas) // 2]
+        tolerancia = max(4.0, 0.6 * altura_mediana)
+
+        caixas.sort(key=lambda c: c['y'])
+        linhas = []
+        for c in caixas:
+            if linhas and abs(linhas[-1]['y'] - c['y']) <= tolerancia:
+                linhas[-1]['itens'].append(c)
+                linhas[-1]['y'] += (c['y'] - linhas[-1]['y']) / len(linhas[-1]['itens'])
+            else:
+                linhas.append({'y': c['y'], 'itens': [c]})
+
+        cabecalhos = ('produto', 'produtos', 'item', 'descricao', 'nome')
+        produtos_extraidos = []
+        sem_preco = []
+        for linha in linhas:
+            texto_linha = ' '.join(i['texto'] for i in sorted(linha['itens'], key=lambda i: i['x'])).strip()
+
+            m = _LINHA_PRODUTO_PRECO.match(texto_linha)
+            if m:
+                nome, preco = m['nome'], m['preco']
+            else:
+                achados = list(_PRECO_QUALQUER.finditer(texto_linha))
+                if not achados:
+                    sem_preco.append(texto_linha)
+                    continue
+                ultimo = achados[-1]
+                nome, preco = texto_linha[:ultimo.start()], ultimo.group(1)
+
+            nome = nome.strip(' â€¢Â·.:+*-â€“â€”|;\t')
+            if not re.search(r'[A-Za-zÃ€-Ã¿]', nome) or cls.normalizar_texto(nome) in cabecalhos:
+                continue
+            produtos_extraidos.append([nome, preco])
+
+        logger.info("OCR de imagem: %d produtos; linhas sem preÃ§o ignoradas: %s",
+                    len(produtos_extraidos), sem_preco)
+
+        if not produtos_extraidos:
+            raise ValueError("NÃ£o foi possÃ­vel identificar pares de produto e preÃ§o na imagem/print. Verifique se a imagem contÃ©m preÃ§os visÃ­veis com centavos.")
+
+        df_extraido = pd.DataFrame(produtos_extraidos, columns=['Produto', 'PreÃ§o'])
+        _salvar_ocr_cache(f"df_{hash_arquivo}", df_extraido)
+        return df_extraido
+
+    @classmethod
+    def ler_arquivo_pdf(cls, stream) -> pd.DataFrame:
+        """
+        Extrai tabelas de arquivos PDF utilizando pdfplumber.
+        """
+        linhas_brutas = []
+
+        with pdfplumber.open(stream) as pdf:
+            for page in pdf.pages:
+                raw_tables = page.extract_tables() or []
+                valid_tables = [t for t in raw_tables if any(len(r) >= 2 for r in t)]
+
+                if valid_tables:
+                    for tabela in valid_tables:
+                        for row in tabela:
+                            if not row:
+                                continue
+                            row_clean = [str(cell).strip() if cell is not None else '' for cell in row]
+                            if any(row_clean):
+                                linhas_brutas.append(row_clean)
+                else:
+                    texto = page.extract_text() or ''
+                    for line in texto.split('\n'):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        m_preco = re.search(r'(\d{1,3}(?:\.\d{3})*,\d{2}|\d+\.\d{2})\s*$', line)
+                        if m_preco:
+                            preco_str = m_preco.group(1)
+                            resto = line[:m_preco.start()].strip(' -:;\t|')
+                            resto = re.sub(r'R\$\s*$', '', resto, flags=re.IGNORECASE).strip(' -:;\t|')
+                            m_cod = re.match(r'^([A-Z0-9_-]{3,10})\s+[-â€“]?\s*(.+)$', resto, re.IGNORECASE)
+                            if m_cod:
+                                cod = m_cod.group(1)
+                                prod = m_cod.group(2)
+                                linhas_brutas.append([cod, prod, preco_str])
+                            else:
+                                linhas_brutas.append([resto, preco_str])
+
+        if not linhas_brutas:
+            raise ValueError("NÃ£o foi possÃ­vel identificar nenhuma tabela ou lista de produtos legÃ­vel no arquivo PDF enviado.")
+
+        max_cols = max(len(r) for r in linhas_brutas)
+        linhas_padronizadas = [r + [''] * (max_cols - len(r)) for r in linhas_brutas]
+
+        df_raw = pd.DataFrame(linhas_padronizadas)
+        return cls._detectar_e_ajustar_cabecalho(df_raw)
+
+    @classmethod
+    def ler_arquivo(cls, stream, nome_arquivo: str) -> pd.DataFrame:
+        """
+        LÃª tabela nos formatos .png, .jpg, .jpeg, .webp (imagem/print), .pdf, .xlsx, .xls ou .csv.
+        """
+        ext = nome_arquivo.rsplit('.', 1)[-1].lower() if '.' in nome_arquivo else ''
+
+        if ext in ('png', 'jpg', 'jpeg', 'webp'):
+            return cls.ler_arquivo_imagem(stream)
+        elif ext == 'pdf':
+            return cls.ler_arquivo_pdf(stream)
+        elif ext in ('xlsx', 'xls'):
+            df_raw = pd.read_excel(stream, header=None)
+            return cls._detectar_e_ajustar_cabecalho(df_raw)
+        elif ext == 'csv':
+            conteudo = stream.read()
+            stream.seek(0)
+            for encoding in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']:
+                for sep in [';', ',', '\t']:
+                    try:
+                        df_raw = pd.read_csv(io.BytesIO(conteudo), sep=sep, encoding=encoding, header=None)
+                        if len(df_raw.columns) > 1 or len(df_raw) > 0:
+                            return cls._detectar_e_ajustar_cabecalho(df_raw)
+                    except Exception:
+                        continue
+            df_raw = pd.read_csv(io.BytesIO(conteudo), header=None)
+            return cls._detectar_e_ajustar_cabecalho(df_raw)
+        else:
+            raise ValueError(f"Formato de arquivo '{ext}' nÃ£o suportado. Envie uma Imagem (.png, .jpg, .jpeg), PDF (.pdf), Excel (.xlsx, .xls) ou CSV (.csv).")
+
+    @classmethod
+    def processar_reajuste(
+        cls,
+        arquivo_stream,
+        nome_arquivo: str,
+        modalidade: str = '12_meses',
+        margem_adicional: float = 0.0,
+        regra_arredondamento: str = 'padrao',
+        coluna_preco_selecionada: str = None,
+        taxa_manual: float = None,
+        mes_vigencia: str = None
+    ) -> dict:
+        """
+        Processa o reajuste de preÃ§os de acordo com o IPCA e gera arquivos de saÃ­da em PDF e Excel.
+        """
+        cls._validar_mes_vigencia(mes_vigencia)
+        t_inicio = time.perf_counter()
+
+        t_ocr_inicio = time.perf_counter()
+        df = cls.ler_arquivo(arquivo_stream, nome_arquivo)
+        tempo_ocr = time.perf_counter() - t_ocr_inicio
+
+        if df.empty:
+            raise ValueError("O documento ou imagem enviada nÃ£o contÃ©m dados legÃ­veis.")
+
+        colunas = cls.deduplicar_colunas(df.columns)
+        df.columns = colunas
+
+        # IdentificaÃ§Ã£o inteligente de colunas
+        mapeamento = cls.identificar_colunas(colunas)
+
+        coluna_preco = coluna_preco_selecionada if coluna_preco_selecionada and coluna_preco_selecionada in colunas else mapeamento['preco']
+        coluna_produto = mapeamento['produto']
+        coluna_codigo = mapeamento['codigo']
+        coluna_categoria = mapeamento['categoria']
+
+        if not coluna_preco:
+            raise ValueError(
+                f"NÃ£o foi possÃ­vel identificar a coluna de preÃ§o no documento. "
+                f"Colunas encontradas: {', '.join(colunas)}. "
+                f"Certifique-se de que hÃ¡ uma coluna com preÃ§os ou valores dos itens."
+            )
+
+        t_bacen_inicio = time.perf_counter()
+        dados_indice = BacenService.calcular_indice_para_reajuste(modalidade, custom_taxa=taxa_manual)
+        tempo_bacen = time.perf_counter() - t_bacen_inicio
+        taxa_ipca = dados_indice['percentual']
+
+        fator_ipca = 1.0 + (taxa_ipca / 100.0)
+        fator_margem = 1.0 + (margem_adicional / 100.0)
+        fator_total = fator_ipca * fator_margem
+        variacao_total_pct = round((fator_total - 1.0) * 100.0, 2)
+
+        linhas_resultado = []
+        precos_originais = []
+        precos_reajustados = []
+        qtd_ignoradas = 0
+
+        df_copia = df.copy()
+        novos_precos_col = []
+        variacoes_rs_col = []
+        variacoes_pct_col = []
+
+        for idx, row in df.iterrows():
+            raw_preco = row[coluna_preco]
+            preco_orig = cls.converter_valor_monetario(raw_preco)
+
+            raw_prod = row[coluna_produto] if coluna_produto else None
+            produto_nome = cls._obter_escalar(raw_prod, default=f"Item {idx + 1}")
+
+            raw_cod = row[coluna_codigo] if coluna_codigo else None
+            codigo = cls._obter_escalar(raw_cod, default="")
+
+            raw_cat = row[coluna_categoria] if coluna_categoria else None
+            categoria = cls._obter_escalar(raw_cat, default="")
+
+            if preco_orig is None or preco_orig <= 0:
+                qtd_ignoradas += 1
+                novos_precos_col.append(raw_preco if (raw_preco is not None and not isinstance(raw_preco, pd.Series)) else '')
+                variacoes_rs_col.append(0.0)
+                variacoes_pct_col.append(0.0)
+                continue
+
+            novo_preco_bruto = preco_orig * fator_total
+            novo_preco = cls.aplicar_regra_arredondamento(novo_preco_bruto, regra_arredondamento)
+            dif_rs = round(novo_preco - preco_orig, 2)
+            dif_pct = round(((novo_preco / preco_orig) - 1.0) * 100.0, 2)
+
+            precos_originais.append(preco_orig)
+            precos_reajustados.append(novo_preco)
+
+            novos_precos_col.append(novo_preco)
+            variacoes_rs_col.append(dif_rs)
+            variacoes_pct_col.append(dif_pct)
+
+            linhas_resultado.append({
+                'linha': idx + 1,
+                'codigo': codigo,
+                'produto': produto_nome,
+                'categoria': categoria,
+                'preco_original': preco_orig,
+                'preco_original_fmt': f"R$ {preco_orig:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'),
+                'novo_preco': novo_preco,
+                'novo_preco_fmt': f"R$ {novo_preco:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'),
+                'diferenca_rs': dif_rs,
+                'diferenca_rs_fmt': f"+R$ {dif_rs:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.') if dif_rs >= 0 else f"-R$ {abs(dif_rs):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'),
+                'diferenca_pct': dif_pct,
+                'diferenca_pct_fmt': f"{dif_pct:+.2f}%"
+            })
+
+        df_copia['PreÃ§o Reajustado (IPCA)'] = novos_precos_col
+        df_copia['Aumento (R$)'] = variacoes_rs_col
+        df_copia['VariaÃ§Ã£o (%)'] = variacoes_pct_col
+
+        total_produtos = len(precos_originais)
+        soma_original = sum(precos_originais)
+        soma_reajustada = sum(precos_reajustados)
+        aumento_total_rs = soma_reajustada - soma_original
+
+        kpis = {
+            'total_produtos': total_produtos,
+            'total_linhas': len(df),
+            'linhas_ignoradas': qtd_ignoradas,
+            'soma_original': round(soma_original, 2),
+            'soma_reajustada': round(soma_reajustada, 2),
+            'aumento_total_rs': round(aumento_total_rs, 2),
+            'variacao_media_pct': variacao_total_pct,
+            'taxa_ipca': taxa_ipca,
+            'margem_adicional': margem_adicional,
+            'descricao_indice': dados_indice['descricao'],
+            'regra_arredondamento': regra_arredondamento,
+            'coluna_preco_utilizada': coluna_preco,
+            'colunas_disponiveis': colunas
+        }
+
+        # GeraÃ§Ã£o do arquivo PDF no formato espelho comparativo solicitado pelo usuÃ¡rio
+        t_pdf_inicio = time.perf_counter()
+        pdf_bytes = cls.gerar_pdf_reajustado(
+            linhas_resultado=linhas_resultado,
+            kpis=kpis,
+            mes_vigencia=mes_vigencia
+        )
+        tempo_pdf = time.perf_counter() - t_pdf_inicio
+
+        t_excel_inicio = time.perf_counter()
+        excel_bytes = cls._gerar_excel_formatado(
+            df_copia,
+            coluna_preco,
+            taxa_ipca,
+            margem_adicional,
+            dados_indice['descricao']
+        )
+        tempo_excel = time.perf_counter() - t_excel_inicio
+
+        tempo_total = time.perf_counter() - t_inicio
+        logger.info(
+            "REAJUSTE | Tempos por etapa: ocr=%.2fs | bacen=%.2fs | pdf=%.2fs | excel=%.2fs | total=%.2fs",
+            tempo_ocr, tempo_bacen, tempo_pdf, tempo_excel, tempo_total
+        )
+
+        timestamp_nome = datetime.now().strftime('%Y%m%d_%H%M')
+
+        return {
+            'sucesso': True,
+            'kpis': kpis,
+            'linhas_previa': linhas_resultado[:100],
+            'pdf_bytes': pdf_bytes,
+            'excel_bytes': excel_bytes,
+            'nome_arquivo_pdf': f"produtos_reajustados_ipca_{timestamp_nome}.pdf",
+            'nome_arquivo_excel': f"produtos_reajustados_ipca_{timestamp_nome}.xlsx"
+        }
+
+    @classmethod
+    def gerar_pdf_reajustado(
+        cls,
+        linhas_resultado: list[dict],
+        kpis: dict,
+        nome_estabelecimento: str = "FORNECEDOR DOCE COMO MEL",
+        mes_vigencia: str = None
+    ) -> bytes:
+        """
+        Gera um PDF comparativo exatamente no formato solicitado pelo usuÃ¡rio:
+        - Barra superior azul escura: Coluna 1 | Coluna 2 | FORNECEDOR DOCE COMO MEL | Coluna 3 | Coluna 4
+        - CabeÃ§alho cinza: Produto | PreÃ§o | [separador] | Produto | PreÃ§o
+        - Linhas comparativas lado a lado: Original (esq) vs Corrigido pelo IPCA (dir)
+        - RodapÃ© amarelo suave: PerÃ­odo anterior (esq) vs PerÃ­odo com IPCA atualizado (dir)
+        """
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=landscape(A4),
+            leftMargin=1.5 * cm,
+            rightMargin=1.5 * cm,
+            topMargin=1.5 * cm,
+            bottomMargin=1.5 * cm
+        )
+
+        # Largura Ãºtil total no A4 Landscape = 29.7cm - 3.0cm = 26.7cm
+        # Col 1 (Prod Orig): 6.8 cm, Col 2 (Preco Orig): 2.8 cm
+        # Col 3 (Separador): 7.5 cm
+        # Col 4 (Prod Reaj): 6.8 cm, Col 5 (Preco Reaj): 2.8 cm
+        col_widths = [6.8 * cm, 2.8 * cm, 7.5 * cm, 6.8 * cm, 2.8 * cm]
+
+        # Estilos tipogrÃ¡ficos
+        th_col = ParagraphStyle('ThCol', fontName='Helvetica', fontSize=8, textColor=colors.HexColor('#cbd5e1'), alignment=1)
+        th_brand = ParagraphStyle('ThBrand', fontName='Helvetica-Bold', fontSize=10.5, textColor=colors.HexColor('#fbbf24'), alignment=1)
+
+        th_sub = ParagraphStyle('ThSub', fontName='Helvetica-Bold', fontSize=9.5, textColor=colors.HexColor('#1f2937'), alignment=1)
+
+        td_prod = ParagraphStyle('TdProd', fontName='Helvetica-Bold', fontSize=8.5, textColor=colors.HexColor('#1f2937'), alignment=0)
+        td_preco = ParagraphStyle('TdPreco', fontName='Helvetica-Bold', fontSize=8.5, textColor=colors.HexColor('#1f2937'), alignment=2)
+
+        tf_left = ParagraphStyle('TfLeft', fontName='Helvetica-Bold', fontSize=8.5, textColor=colors.HexColor('#1f2937'), alignment=0)
+        tf_right = ParagraphStyle('TfRight', fontName='Helvetica-Bold', fontSize=8.5, textColor=colors.HexColor('#1f2937'), alignment=1, leading=11)
+
+        # Montagem dos dados da tabela
+        # Linha 0: Barra Superior Azul
+        table_data = [
+            [
+                Paragraph('Coluna 1', th_col),
+                Paragraph('Coluna 2', th_col),
+                Paragraph(nome_estabelecimento, th_brand),
+                Paragraph('Coluna 3', th_col),
+                Paragraph('Coluna 4', th_col),
+            ],
+            # Linha 1: SubcabeÃ§alho Cinza
+            [
+                Paragraph('Produto', th_sub),
+                Paragraph('PreÃ§o', th_sub),
+                Paragraph('', th_sub),
+                Paragraph('Produto', th_sub),
+                Paragraph('PreÃ§o', th_sub),
+            ]
+        ]
+
+        # Linhas de Produtos lado a lado
+        for item in linhas_resultado:
+            table_data.append([
+                Paragraph(item['produto'], td_prod),
+                Paragraph(item['preco_original_fmt'], td_preco),
+                Paragraph('', td_prod),
+                Paragraph(item['produto'], td_prod),
+                Paragraph(item['novo_preco_fmt'], td_preco),
+            ])
+
+        # Data atual por extenso para a legenda de vigÃªncia
+        meses_extenso = {
+            1: 'janeiro', 2: 'fevereiro', 3: 'marÃ§o', 4: 'abril',
+            5: 'maio', 6: 'junho', 7: 'julho', 8: 'agosto',
+            9: 'setembro', 10: 'outubro', 11: 'novembro', 12: 'dezembro'
+        }
+        ano_atual, mes_vigente = cls._validar_mes_vigencia(mes_vigencia)
+        mes_atual_nome = meses_extenso[mes_vigente]
+
+        taxa_str = f"{kpis['taxa_ipca']:.2f}%".replace('.', ',')
+        texto_rodape_dir = (
+            f"Tabela de preÃ§os reajustada pelo IPCA dos Ãºltimos 12 meses ({taxa_str})"
+        )
+
+        # Linha final: RodapÃ© Amarelo
+        table_data.append([
+            Paragraph("Tabela de preÃ§os anterior", tf_left),
+            Paragraph("", tf_left),
+            Paragraph("", tf_left),
+            Paragraph(texto_rodape_dir, tf_right),
+            Paragraph("", tf_right)
+        ])
+
+        t_style = [
+            # Linha 0: Top Bar Azul
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c385c')),
+            ('VALIGN', (0, 0), (-1, 0), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, 0), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 5),
+
+            # Linha 1: SubcabeÃ§alho Cinza
+            ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#a0a7b4')),
+            ('VALIGN', (0, 1), (-1, 1), 'MIDDLE'),
+            ('TOPPADDING', (0, 1), (-1, 1), 6),
+            ('BOTTOMPADDING', (0, 1), (-1, 1), 6),
+
+            # Bordas pretas/escuras em todas as cÃ©lulas
+            ('GRID', (0, 0), (-1, -1), 0.8, colors.HexColor('#374151')),
+
+            # Dados
+            ('VALIGN', (0, 2), (-1, -2), 'MIDDLE'),
+            ('TOPPADDING', (0, 2), (-1, -2), 5),
+            ('BOTTOMPADDING', (0, 2), (-1, -2), 5),
+            ('BACKGROUND', (0, 2), (1, -2), colors.white),
+            ('BACKGROUND', (2, 2), (2, -2), colors.HexColor('#f8fafc')),  # coluna separadora
+            ('BACKGROUND', (3, 2), (4, -2), colors.white),
+
+            # Linha Final: RodapÃ© Amarelo
+            ('SPAN', (0, -1), (1, -1)),
+            ('SPAN', (3, -1), (4, -1)),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#fde68a')),
+            ('VALIGN', (0, -1), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, -1), (-1, -1), 7),
+            ('BOTTOMPADDING', (0, -1), (-1, -1), 7),
+        ]
+
+        tabela = Table(table_data, colWidths=col_widths, repeatRows=2)
+        tabela.setStyle(TableStyle(t_style))
+
+        doc.build([tabela], canvasmaker=NumberedCanvas)
+        buffer.seek(0)
+        return buffer.getvalue()
+
+    @classmethod
+    def gerar_pdf_modelo(cls) -> bytes:
+        """
+        Gera um PDF modelo com tabela formatada de produtos no novo formato espelho.
+        """
+        dados_exemplo = [
+            {'linha': 1, 'codigo': 'DOC-001', 'produto': 'Banoffe', 'categoria': 'Tortas', 'preco_original_fmt': 'R$ 10,42', 'novo_preco_fmt': 'R$ 10,90', 'diferenca_rs_fmt': '+R$ 0,48', 'diferenca_pct_fmt': '+4.61%'},
+            {'linha': 2, 'codigo': 'DOC-002', 'produto': 'Mousse de Chocolate', 'categoria': 'Doces', 'preco_original_fmt': 'R$ 11,47', 'novo_preco_fmt': 'R$ 12,00', 'diferenca_rs_fmt': '+R$ 0,53', 'diferenca_pct_fmt': '+4.62%'},
+            {'linha': 3, 'codigo': 'DOC-003', 'produto': 'Bolo de laranja Caseiro', 'categoria': 'Bolos', 'preco_original_fmt': 'R$ 6,25', 'novo_preco_fmt': 'R$ 6,54', 'diferenca_rs_fmt': '+R$ 0,29', 'diferenca_pct_fmt': '+4.64%'},
+            {'linha': 4, 'codigo': 'DOC-004', 'produto': 'Bolo fit de Banana', 'categoria': 'Bolos', 'preco_original_fmt': 'R$ 6,25', 'novo_preco_fmt': 'R$ 6,54', 'diferenca_rs_fmt': '+R$ 0,29', 'diferenca_pct_fmt': '+4.64%'},
+            {'linha': 5, 'codigo': 'DOC-005', 'produto': 'Gelatina Diet amora', 'categoria': 'Sobremesas', 'preco_original_fmt': 'R$ 5,50', 'novo_preco_fmt': 'R$ 5,75', 'diferenca_rs_fmt': '+R$ 0,25', 'diferenca_pct_fmt': '+4.55%'},
+            {'linha': 6, 'codigo': 'DOC-006', 'produto': 'Sorvete ItÃ¡lia 120ml', 'categoria': 'Sorvetes', 'preco_original_fmt': 'R$ 6,20', 'novo_preco_fmt': 'R$ 6,48', 'diferenca_rs_fmt': '+R$ 0,28', 'diferenca_pct_fmt': '+4.52%'},
+        ]
+        kpis_exemplo = {
+            'total_produtos': 6,
+            'soma_original': 46.09,
+            'soma_reajustada': 48.21,
+            'aumento_total_rs': 2.12,
+            'variacao_media_pct': 4.58,
+            'taxa_ipca': 4.58,
+            'margem_adicional': 0.0,
+            'descricao_indice': 'IPCA acumulado nos Ãºltimos 12 meses: +4.58%',
+            'regra_arredondamento': 'padrao'
+        }
+        return cls.gerar_pdf_reajustado(dados_exemplo, kpis_exemplo)
+
+    @classmethod
+    def _gerar_excel_formatado(
+        cls,
+        df: pd.DataFrame,
+        coluna_preco_orig: str,
+        taxa_ipca: float,
+        margem_adicional: float,
+        descricao_indice: str
+    ) -> bytes:
+        """
+        Gera uma planilha Excel .xlsx estilizada.
+        """
+        output = io.BytesIO()
+
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Produtos Reajustados', index=False, startrow=3)
+            ws = writer.sheets['Produtos Reajustados']
+
+            ws.merge_cells('A1:F1')
+            titulo_cell = ws['A1']
+            titulo_cell.value = f"REAJUSTE DE PREÃ‡OS â€” ÃNDICE IPCA (BANCO CENTRAL) | {datetime.now().strftime('%d/%m/%Y')}"
+            titulo_cell.font = Font(name='Calibri', size=14, bold=True, color='FFFFFF')
+            titulo_cell.fill = PatternFill(start_color='1F2937', end_color='1F2937', fill_type='solid')
+            titulo_cell.alignment = Alignment(horizontal='left', vertical='center')
+
+            ws.merge_cells('A2:F2')
+            sub_cell = ws['A2']
+            sub_cell.value = f"{descricao_indice} | Margem extra: {margem_adicional:+.1f}% | Gerado por Doce como Mel GestÃ£o"
+            sub_cell.font = Font(name='Calibri', size=10, italic=True, color='D1D5DB')
+            sub_cell.fill = PatternFill(start_color='374151', end_color='374151', fill_type='solid')
+            sub_cell.alignment = Alignment(horizontal='left', vertical='center')
+
+            header_fill = PatternFill(start_color='D97706', end_color='D97706', fill_type='solid')
+            header_destaque_fill = PatternFill(start_color='059669', end_color='059669', fill_type='solid')
+            header_font = Font(name='Calibri', size=11, bold=True, color='FFFFFF')
+            thin_border = Border(
+                left=Side(style='thin', color='E5E7EB'),
+                right=Side(style='thin', color='E5E7EB'),
+                top=Side(style='thin', color='E5E7EB'),
+                bottom=Side(style='thin', color='E5E7EB')
+            )
+
+            col_novo_preco_idx = None
+            for col_idx, col_name in enumerate(df.columns, 1):
+                cell = ws.cell(row=4, column=col_idx)
+                cell.font = header_font
+                if col_name == 'PreÃ§o Reajustado (IPCA)':
+                    cell.fill = header_destaque_fill
+                    col_novo_preco_idx = col_idx
+                else:
+                    cell.fill = header_fill
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+
+            zebra_fill = PatternFill(start_color='F9FAFB', end_color='F9FAFB', fill_type='solid')
+            destaque_col_fill = PatternFill(start_color='ECFDF5', end_color='ECFDF5', fill_type='solid')
+
+            total_linhas = len(df)
+            for row_idx in range(5, 5 + total_linhas):
+                is_zebra = (row_idx % 2 == 0)
+                for col_idx, col_name in enumerate(df.columns, 1):
+                    c = ws.cell(row=row_idx, column=col_idx)
+                    c.border = thin_border
+                    if is_zebra and col_idx != col_novo_preco_idx:
+                        c.fill = zebra_fill
+
+                    if col_name in (coluna_preco_orig, 'PreÃ§o Reajustado (IPCA)', 'Aumento (R$)'):
+                        c.number_format = 'R$ #,##0.00'
+                        if col_idx == col_novo_preco_idx:
+                            c.fill = destaque_col_fill
+                            c.font = Font(bold=True, color='065F46')
+                    elif col_name == 'VariaÃ§Ã£o (%)':
+                        c.number_format = '0.00"%"'
+                        c.font = Font(color='047857')
+
+            for col in ws.columns:
+                max_len = 0
+                col_letter = get_column_letter(col[0].column)
+                for cell in col:
+                    if cell.row in (1, 2):
+                        continue
+                    val_str = str(cell.value or '')
+                    if len(val_str) > max_len:
+                        max_len = len(val_str)
+                ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+        output.seek(0)
+        return output.getvalue()
+
+    @classmethod
+    def gerar_planilha_modelo(cls) -> bytes:
+        """
+        Gera uma planilha modelo (.xlsx) com produtos fictÃ­cios.
+        """
+        dados = [
+            {'CÃ³digo': 'DOC-001', 'Produto': 'Banoffe', 'Categoria': 'Tortas', 'PreÃ§o': 10.42, 'Unidade': 'Fatia', 'Estoque': 20},
+            {'CÃ³digo': 'DOC-002', 'Produto': 'Mousse de Chocolate', 'Categoria': 'Doces', 'PreÃ§o': 11.47, 'Unidade': 'TaÃ§a', 'Estoque': 15},
+            {'CÃ³digo': 'DOC-003', 'Produto': 'Bolo de laranja Caseiro', 'Categoria': 'Bolos', 'PreÃ§o': 6.25, 'Unidade': 'Fatia', 'Estoque': 30},
+            {'CÃ³digo': 'DOC-004', 'Produto': 'Bolo fit de Banana', 'Categoria': 'Bolos', 'PreÃ§o': 6.25, 'Unidade': 'Fatia', 'Estoque': 25},
+            {'CÃ³digo': 'DOC-005', 'Produto': 'Gelatina Diet amora', 'Categoria': 'Sobremesas', 'PreÃ§o': 5.50, 'Unidade': 'Pote', 'Estoque': 40},
+            {'CÃ³digo': 'DOC-006', 'Produto': 'Sorvete ItÃ¡lia 120ml', 'Categoria': 'Sorvetes', 'PreÃ§o': 6.20, 'Unidade': 'Pote', 'Estoque': 50},
+        ]
+        df = pd.DataFrame(dados)
+
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Tabela de Produtos', index=False, startrow=2)
+            ws = writer.sheets['Tabela de Produtos']
+
+            ws.merge_cells('A1:F1')
+            b = ws['A1']
+            b.value = "MODELO DE TABELA DE PRODUTOS â€” Preencha com seus itens e envie para reajuste pelo IPCA"
+            b.font = Font(name='Calibri', size=11, bold=True, color='FFFFFF')
+            b.fill = PatternFill(start_color='D97706', end_color='D97706', fill_type='solid')
+            b.alignment = Alignment(horizontal='center', vertical='center')
+
+            header_fill = PatternFill(start_color='1F2937', end_color='1F2937', fill_type='solid')
+            header_font = Font(name='Calibri', size=11, bold=True, color='FFFFFF')
+
+            for col_idx, _ in enumerate(df.columns, 1):
+                c = ws.cell(row=3, column=col_idx)
+                c.fill = header_fill
+                c.font = header_font
+                c.alignment = Alignment(horizontal='center', vertical='center')
+
+            for row_idx in range(4, 4 + len(df)):
+                cell_preco = ws.cell(row=row_idx, column=4)
+                cell_preco.number_format = 'R$ #,##0.00'
+
+            for col in ws.columns:
+                max_len = 0
+                col_letter = get_column_letter(col[0].column)
+                for cell in col:
+                    if cell.row == 1:
+                        continue
+                    val_str = str(cell.value or '')
+                    if len(val_str) > max_len:
+                        max_len = len(val_str)
+                ws.column_dimensions[col_letter].width = max(max_len + 4, 14)
+
+        output.seek(0)
+        return output.getvalue()
+
+
+==================================================
+ARQUIVO: app/services/ai_fiscal_service.py
+==================================================
+import base64
+import json
+import logging
+import os
+import re
+from datetime import date
+from io import BytesIO
+from typing import Any
+
+import requests
+from PIL import Image, ImageOps  # pip install pillow
+
+logger = logging.getLogger(__name__)
+
+
+class AiFiscalService:
+    """Leitura de notas fiscais e comprovantes com Ollama + Qwen3-VL (local)."""
+
+    OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+    # Variante "instruct" nÃ£o faz raciocÃ­nio (<think>), logo Ã© mais rÃ¡pida.
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3-vl:4b-instruct")
+    TIMEOUT = min(int(os.getenv("OLLAMA_TIMEOUT", "90")), 95)
+    NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
+    NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "2048"))
+    KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
+    IMG_LADO_MAX = int(os.getenv("OLLAMA_IMG_MAX", "1280"))
+    MAX_PAGINAS_PDF = 5
+
+    TIPOS_TRANSACAO = ("despesa", "receita")
+    TIPOS_RECEITA = ("Venda", "Encomenda", "ServiÃ§o", "Delivery", "Feira/Evento", "Outros")
+    FORMAS_PAGAMENTO = ("Pix", "Dinheiro", "CartÃ£o de DÃ©bito", "CartÃ£o de CrÃ©dito", "TransferÃªncia")
+
+    SCHEMA = {
+        "type": "object",
+        "properties": {
+            "tipo_transacao": {"type": "string", "enum": ["despesa", "receita"]},
+            "data": {"type": "string"},
+            "estabelecimento": {"type": "string"},
+            "forma_pagamento": {"type": "string"},
+            "tipo_receita": {"type": "string"},
+            "valor_total": {"type": "number"},
+            "is_parcelado": {"type": "boolean"},
+            "numero_parcelas": {"type": "integer"},
+            "valor_parcela": {"type": "number"},
+            "itens": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "descricao": {"type": "string"},
+                        "valor": {"type": "number"},
+                        "categoria_sugerida": {"type": "string"},
+                    },
+                    "required": ["descricao", "valor"],
+                },
+            },
+            "observacoes": {"type": "string"},
+        },
+        "required": [
+            "tipo_transacao",
+            "data",
+            "estabelecimento",
+            "valor_total",
+            "itens",
+            "observacoes",
+        ],
+    }
+
+    # ------------------------------------------------------------------
+    # Disponibilidade
+    # ------------------------------------------------------------------
+    @classmethod
+    def get_provider(cls) -> str:
+        return os.getenv("AI_PROVIDER", "texto").strip().lower()
+
+    @classmethod
+    def is_configurado(cls) -> bool:
+        import time as _t
+        agora = _t.time()
+        cache = getattr(cls, "_cfg_cache", None)
+        if cache and agora - cache[0] < 120:
+            return cache[1]
+        ok = cls._verificar_configurado()
+        cls._cfg_cache = (agora, ok)
+        return ok
+
+    @classmethod
+    def _verificar_configurado(cls) -> bool:
+        provider = cls.get_provider()
+        if provider == "texto":
+            return True
+        try:
+            response = requests.get(f"{cls.OLLAMA_HOST}/api/tags", timeout=2)
+            response.raise_for_status()
+
+            nomes = {m.get("name", "") for m in response.json().get("models", [])}
+            candidatos = {cls.OLLAMA_MODEL}
+            if ":" not in cls.OLLAMA_MODEL:
+                candidatos.add(f"{cls.OLLAMA_MODEL}:latest")
+
+            if nomes & candidatos:
+                return True
+
+            logger.warning("Modelo '%s' nÃ£o encontrado no Ollama.", cls.OLLAMA_MODEL)
+            return False
+        except requests.RequestException as e:
+            logger.warning("Ollama nÃ£o estÃ¡ disponÃ­vel: %s", e)
+            return False
+        except Exception as e:
+            logger.warning("Erro ao verificar Ollama: %s", e)
+            return False
+
+    # ------------------------------------------------------------------
+    # InterpretaÃ§Ã£o
+    # ------------------------------------------------------------------
+    @classmethod
+    def interpretar_documento(
+        cls,
+        file_bytes: bytes,
+        mimetype: str,
+        categorias_existentes: list[str],
+    ) -> dict[str, Any]:
+        hoje_str = date.today().strftime("%Y-%m-%d")
+        provider = cls.get_provider()
+
+        if provider == "texto":
+            return cls._processar_com_extrator_texto(file_bytes, mimetype, hoje_str, categorias_existentes)
+        elif provider == "ollama":
+            if cls.is_configurado():
+                return cls._processar_com_ollama(file_bytes, mimetype, hoje_str, categorias_existentes)
+            logger.warning("Ollama indisponivel. Usando OCR (extrator de texto) como alternativa.")
+            return cls._processar_com_extrator_texto(file_bytes, mimetype, hoje_str, categorias_existentes)
+        else:
+            logger.warning("Provedor '%s' desconhecido. Utilizando 'texto' como padrÃ£o.", provider)
+            return cls._processar_com_extrator_texto(file_bytes, mimetype, hoje_str, categorias_existentes)
+
+    @classmethod
+    def _processar_com_extrator_texto(
+        cls,
+        file_bytes: bytes,
+        mimetype: str,
+        hoje_str: str,
+        categorias_existentes: list[str],
+    ) -> dict[str, Any]:
+        """
+        Processa documentos PDF diretamente via extrator_nota.py sem IA/GPU.
+        Se falhar ou nÃ£o conseguir identificar valores, retorna estrutura vazia para preenchimento manual.
+        """
+        import time as _time
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutTimeout
+
+        TIMEOUT_S = min(int(os.getenv("EXTRACAO_TIMEOUT", "90")), 95)
+        _t0 = _time.perf_counter()
+
+        from app.services.planilha_produto_service import OCROcupadoError
+
+        try:
+            import extrator_nota
+
+            logger.info(
+                "EXTRATOR | inÃ­cio | MIME: %s | Bytes: %d | Timeout: %ds",
+                mimetype, len(file_bytes), TIMEOUT_S
+            )
+
+            def _chamar_extrator():
+                if mimetype.endswith("pdf"):
+                    return extrator_nota.extrair_dados_pdf(file_bytes)
+                elif mimetype.startswith("image/") and os.getenv("OCR_IMAGEM", "1") == "1":
+                    logger.info("EXTRATOR | imagem recebida (%s). Iniciando OCR.", mimetype)
+                    return extrator_nota.extrair_dados_imagem_ocr(file_bytes)
+                return None  # tipo nÃ£o suportado â€” sinaliza abaixo
+
+            if not (mimetype.endswith("pdf") or
+                    (mimetype.startswith("image/") and os.getenv("OCR_IMAGEM", "1") == "1")):
+                logger.info("EXTRATOR | tipo nÃ£o suportado: %s", mimetype)
+                return cls._gerar_resultado_manual(
+                    f"Formato '{mimetype}' nÃ£o suportado pelo extrator. Preencha os campos manualmente.",
+                    hoje_str,
+                )
+
+            
+            # Executa em thread separada para limitar a espera do worker.
+            executor = ThreadPoolExecutor(max_workers=1)
+            futuro = executor.submit(_chamar_extrator)
+
+            try:
+                dados_extrator = futuro.result(timeout=TIMEOUT_S)
+
+            except _FutTimeout:
+                logger.error(
+                    "EXTRATOR | TIMEOUT apÃ³s %ds | MIME: %s | Bytes: %d",
+                    TIMEOUT_S,
+                    mimetype,
+                    len(file_bytes)
+                )
+
+                futuro.cancel()
+
+                return cls._gerar_resultado_manual(
+                    f"Tempo limite de extraÃ§Ã£o excedido ({TIMEOUT_S}s). "
+                    "Preencha os dados manualmente.",
+                    hoje_str,
+                )
+
+            finally:
+                # NÃ£o aguarda uma tarefa que ultrapassou o limite.
+                executor.shutdown(wait=False, cancel_futures=True)
+
+            if dados_extrator is None:
+                return cls._gerar_resultado_manual(
+                    f"Formato '{mimetype}' nÃ£o suportado pelo extrator. Preencha os campos manualmente.",
+                    hoje_str,
+                )
+
+            logger.info(
+                "EXTRATOR | extraÃ§Ã£o concluÃ­da em %.1fs | fornecedor=%r | valor=%.2f | parcelas=%d",
+                _time.perf_counter() - _t0,
+                dados_extrator.get("fornecedor", ""),
+                float(dados_extrator.get("valor_total") or 0),
+                int(dados_extrator.get("parcelas") or 1),
+            )
+
+            # Converte o retorno do extrator_nota para o formato esperado pela tela de revisÃ£o
+            dados_convertidos = cls._converter_extrator_para_revisao(dados_extrator, hoje_str, categorias_existentes)
+
+            logger.info(
+                "EXTRATOR | conversÃ£o concluÃ­da | forma_pagamento=%r | total=%.2f",
+                dados_convertidos.get("forma_pagamento"),
+                dados_convertidos.get("valor_total", 0),
+            )
+
+            if dados_convertidos["valor_total"] == 0.0 and not dados_convertidos["itens"]:
+                return cls._gerar_resultado_manual(
+                    "NÃ£o foi possÃ­vel identificar os dados automaticamente no documento. Por favor, preencha manualmente.",
+                    hoje_str,
+                )
+
+            dados_convertidos["ia_sucesso"] = True
+            dados_convertidos["modo_demo"] = False
+            return dados_convertidos
+
+        except OCROcupadoError:
+            # Propaga a ocupacao para o chamador.
+            raise
+
+        except Exception as e:
+            # Loga com traceback completo, sem engolir exceÃ§Ãµes
+            logger.exception(
+                "EXTRATOR | ERRO apÃ³s %.1fs | MIME: %s | %s",
+                _time.perf_counter() - _t0, mimetype, e
+            )
+            return cls._gerar_resultado_manual(
+                f"Erro na extraÃ§Ã£o automÃ¡tica ({e}). Por favor, preencha os dados manualmente.",
+                hoje_str,
+            )
+
+
+    @classmethod
+    def _converter_extrator_para_revisao(
+        cls,
+        d: dict[str, Any],
+        hoje_str: str,
+        categorias_existentes: list[str]
+    ) -> dict[str, Any]:
+        """
+        Converte o dicionÃ¡rio {fornecedor, data, forma_pagamento, parcelas, valor_total, itens}
+        para a estrutura que a tela de revisÃ£o e o banco utilizam.
+        """
+        fornecedor = str(d.get("fornecedor") or "").strip()
+        data_str = str(d.get("data") or "").strip()
+        if not data_str:
+            data_str = hoje_str
+
+        fp = str(d.get("forma_pagamento") or "").strip()
+        if fp not in cls.FORMAS_PAGAMENTO:
+            _fpu = fp.upper()
+            if re.search(r"CART[AÃƒ]O\s+(?:DE\s+)?CR[EÃ‰]DITO|CR[EÃ‰]DITO.*\d+\s*[xX]|CREDITO\s+PARC", _fpu):
+                fp = "CartÃ£o de CrÃ©dito"
+            elif re.search(r"CART[AÃƒ]O\s+(?:DE\s+)?D[EÃ‰]BITO|COMPRA\s+D[EÃ‰]BITO", _fpu):
+                fp = "CartÃ£o de DÃ©bito"
+            elif re.search(r"\bPIX\b|CHAVE\s+PIX", _fpu):
+                fp = "Pix"
+            elif re.search(r"\bDINHEIRO\b|\bESP[EÃ‰]CIE\b", _fpu):
+                fp = "Dinheiro"
+            elif re.search(r"\bTRANSFER[EÃŠ]NCIA\b|\bTED\b|\bDOC\b|\bTEF\b", _fpu):
+                fp = "TransferÃªncia"
+            elif re.search(r"\bBOLETO\b", _fpu):
+                fp = "Pix"
+            else:
+                fp = ""  # Deixa vazio; usuÃ¡rio preenche na revisÃ£o
+
+        parcelas = int(d.get("parcelas") or 1)
+        is_parcelado = parcelas > 1
+        valor_total = round(
+        cls._para_float(d.get("valor_total")), 2)
+        valor_parcela = round(valor_total / parcelas, 2) if is_parcelado and parcelas > 0 else 0.0
+
+        itens_in = d.get("itens") or []
+        itens_out = []
+        cat_padrao = categorias_existentes[0] if categorias_existentes else "Outros"
+
+        for item in itens_in:
+            if isinstance(item, dict):
+                desc = str(item.get("descricao") or "").strip()
+                val = round(
+    cls._para_float(item.get("valor")),
+    2
+)
+                cat = str(item.get("categoria_sugerida") or "").strip()
+                if not cat:
+                    cat = cat_padrao
+                if desc or val > 0:
+                    itens_out.append({
+                        "descricao": desc or fornecedor or "Item",
+                        "valor": val,
+                        "categoria_sugerida": cat
+                    })
+
+        if not itens_out and valor_total > 0:
+            itens_out.append({
+                "descricao": fornecedor or "Despesa de Comprovante",
+                "valor": valor_total,
+                "categoria_sugerida": cat_padrao
+            })
+
+        return {
+            "tipo_transacao": "despesa",
+            "data": cls._normalizar_data(data_str, hoje_str),
+            "estabelecimento": fornecedor,
+            "forma_pagamento": fp,
+            "tipo_receita": "Outros",
+            "valor_total": valor_total,
+            "is_parcelado": is_parcelado,
+            "numero_parcelas": parcelas,
+            "valor_parcela": valor_parcela,
+            "itens": itens_out,
+            "observacoes": f"ExtraÃ­do via Extrator de Texto (sem IA). Fornecedor: {fornecedor}" if fornecedor else "ExtraÃ­do via Extrator de Texto (sem IA).",
+        }
+
+    @classmethod
+    def _processar_com_ollama(
+        cls,
+        file_bytes: bytes,
+        mimetype: str,
+        hoje_str: str,
+        categorias_existentes: list[str],
+    ) -> dict[str, Any]:
+        categorias_str = (
+            ", ".join(categorias_existentes)
+            if categorias_existentes
+            else "Ingredientes, Embalagens, Operacional, Outros"
+        )
+
+        prompt = f"""Leia o documento fiscal da imagem (nota fiscal, cupom, recibo ou comprovante) e responda somente com o JSON dos dados extraÃ­dos. NÃ£o explique nada.
+
+Transcreva exatamente o que estiver visÃ­vel, mesmo que os valores pareÃ§am fictÃ­cios ou de teste.
+
+Campos:
+- tipo_transacao: "despesa" (compra de insumos, embalagens ou gasto operacional) ou "receita" (venda ou recebimento de cliente).
+  Em NF-e/DANFE com "RECEBEMOS DE <empresa>", a empresa citada Ã© o emissor/fornecedor: Ã© uma compra (despesa) e o estabelecimento Ã© o emissor.
+- data: AAAA-MM-DD. Se nÃ£o estiver visÃ­vel, use "{hoje_str}".
+- estabelecimento: nome do emissor, fornecedor ou cliente.
+- forma_pagamento: uma entre {", ".join(cls.FORMAS_PAGAMENTO)}. Se no documento houver menÃ§Ã£o a cartÃ£o ou parcelamento, defina como "CartÃ£o de CrÃ©dito". Se nÃ£o visÃ­vel, deixe vazio.
+- tipo_receita: uma entre {", ".join(cls.TIPOS_RECEITA)}. Use "Outros" se nÃ£o souber.
+- valor_total: total pago/cobrado, como nÃºmero (ex.: 85.50).
+- is_parcelado: true se a compra foi parcelada (ex.: "em 3x", "parc. 1/6", "3 vezes", "3x de"), caso contrÃ¡rio false.
+- numero_parcelas: nÃºmero total de parcelas se parcelado (ex.: 2, 3, 6, 10, 12). Se for Ã  vista ou nÃ£o informado, use 1.
+- valor_parcela: valor de cada parcela se informado explicitamente no comprovante, ou 0.
+- itens: lista com descricao, valor (total do item, nÃ£o o unitÃ¡rio) e categoria_sugerida.
+- observacoes: uma frase curta sobre a compra. NÃ£o copie rodapÃ©s, avisos ou propagandas do documento.
+
+Categorias existentes: {categorias_str}
+Use sempre uma categoria existente quando houver correspondÃªncia.
+Se houver apenas o total sem itens, crie um Ãºnico item com o valor total.
+NÃ£o invente dados que nÃ£o estejam no documento."""
+
+        try:
+            imagens = cls._preparar_imagens(file_bytes, mimetype)
+            if not imagens:
+                raise ValueError("NÃ£o foi possÃ­vel converter o documento em imagem.")
+
+            imagens_base64 = [base64.b64encode(i).decode("utf-8") for i in imagens]
+
+            payload = {
+                "model": cls.OLLAMA_MODEL,
+                "messages": [
+                    {"role": "user", "content": prompt, "images": imagens_base64}
+                ],
+                "stream": False,
+                "think": False,
+                "format": cls.SCHEMA,
+                "keep_alive": cls.KEEP_ALIVE,
+                "options": {
+                    "temperature": 0,
+                    "num_ctx": cls.NUM_CTX,
+                    "num_predict": cls.NUM_PREDICT,
+                },
+            }
+
+            logger.info(
+                "Enviando para Ollama (%s imagem(ns), modelo=%s, num_ctx=%s)",
+                len(imagens_base64),
+                cls.OLLAMA_MODEL,
+                cls.NUM_CTX,
+            )
+
+            response = requests.post(
+                f"{cls.OLLAMA_HOST}/api/chat", json=payload, timeout=cls.TIMEOUT
+            )
+
+            if response.status_code == 404:
+                raise RuntimeError(
+                    f"Modelo '{cls.OLLAMA_MODEL}' nÃ£o encontrado. "
+                    f"Execute: ollama pull {cls.OLLAMA_MODEL}"
+                )
+            response.raise_for_status()
+
+            dados_resp = response.json()
+            mensagem_resp = dados_resp.get("message", {}) or {}
+            texto = (mensagem_resp.get("content") or "").strip()
+
+            if dados_resp.get("done_reason") == "length":
+                logger.warning("Resposta cortada por limite de tokens (num_predict).")
+
+            # Remove bloco de raciocÃ­nio, se o modelo ainda gerar um.
+            texto = re.sub(r"<think>.*?</think>", "", texto, flags=re.DOTALL).strip()
+
+            if "<think>" in texto:
+                raise ValueError(
+                    "O modelo gastou o limite de tokens raciocinando e nÃ£o chegou ao JSON. "
+                    "Use a variante -instruct ou atualize o Ollama."
+                )
+
+            if not texto:
+                raise ValueError("O Ollama retornou uma resposta vazia.")
+
+            logger.info("Resposta bruta do modelo: %s", texto[:1500])
+
+            dados = cls._normalizar_resultado(cls._extrair_json(texto), hoje_str)
+
+            if dados["valor_total"] == 0.0 and not dados["itens"]:
+                return cls._gerar_resultado_manual(
+                    "O modelo nÃ£o conseguiu identificar valores no documento. "
+                    "Por favor, confira os campos e preencha manualmente.",
+                    hoje_str,
+                )
+
+            dados["ia_sucesso"] = True
+            dados["modo_demo"] = False
+            return dados
+
+        except requests.exceptions.ConnectionError:
+            logger.exception("NÃ£o foi possÃ­vel conectar ao Ollama.")
+            return cls._gerar_resultado_manual(
+                "O serviÃ§o Ollama nÃ£o estÃ¡ em execuÃ§Ã£o. Os campos estÃ£o liberados para preenchimento manual.",
+                hoje_str,
+            )
+
+        except requests.exceptions.Timeout:
+            logger.exception("O processamento excedeu o tempo limite no Ollama.")
+            return cls._gerar_resultado_manual(
+                "Tempo limite de processamento excedido. Por favor, preencha os dados manualmente.",
+                hoje_str,
+            )
+
+        except requests.RequestException as e:
+            logger.exception("Erro de comunicaÃ§Ã£o com o Ollama: %s", e)
+            return cls._gerar_resultado_manual(
+                f"Erro de comunicaÃ§Ã£o com o Ollama ({e}). Preencha os dados manualmente.",
+                hoje_str,
+            )
+
+        except Exception as e:
+            logger.exception("Erro ao processar documento com IA: %s", e)
+            return cls._gerar_resultado_manual(
+                f"NÃ£o foi possÃ­vel extrair dados automaticamente ({e}). Preencha os campos manualmente.",
+                hoje_str,
+            )
+
+    # ------------------------------------------------------------------
+    # PreparaÃ§Ã£o das imagens
+    # ------------------------------------------------------------------
+    @classmethod
+    def _otimizar_imagem(cls, img_bytes: bytes) -> bytes:
+        """Corrige rotaÃ§Ã£o, reduz resoluÃ§Ã£o e converte para JPEG."""
+        img = Image.open(BytesIO(img_bytes))
+        img = ImageOps.exif_transpose(img).convert("RGB")
+        img.thumbnail((cls.IMG_LADO_MAX, cls.IMG_LADO_MAX))
+        buf = BytesIO()
+        img.save(buf, "JPEG", quality=88)
+        return buf.getvalue()
+
+    @classmethod
+    def _preparar_imagens(cls, file_bytes: bytes, mimetype: str) -> list[bytes]:
+        if mimetype.startswith("image/"):
+            return [cls._otimizar_imagem(file_bytes)]
+
+        if mimetype == "application/pdf":
+            try:
+                import fitz  # PyMuPDF
+            except ImportError:
+                raise RuntimeError("PyMuPDF nÃ£o estÃ¡ instalado. Execute: pip install pymupdf")
+
+            documento = fitz.open(stream=file_bytes, filetype="pdf")
+            try:
+                total = len(documento)
+                limite = min(total, cls.MAX_PAGINAS_PDF)
+                imagens = []
+                for n in range(limite):
+                    pixmap = documento.load_page(n).get_pixmap(
+                        matrix=fitz.Matrix(2, 2), alpha=False
+                    )
+                    imagens.append(cls._otimizar_imagem(pixmap.tobytes("png")))
+            finally:
+                documento.close()
+
+            if not imagens:
+                raise ValueError("O PDF nÃ£o possui pÃ¡ginas legÃ­veis.")
+
+            if total > limite:
+                logger.warning(
+                    "PDF com %s pÃ¡ginas; somente as primeiras %s foram processadas.",
+                    total,
+                    limite,
+                )
+            return imagens
+
+        raise ValueError(f"Tipo de arquivo nÃ£o suportado: {mimetype}")
+
+    # ------------------------------------------------------------------
+    # Parsing
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _extrair_json(texto: str) -> dict[str, Any]:
+        texto = texto.strip()
+        texto = re.sub(r"^```json\s*", "", texto, flags=re.IGNORECASE)
+        texto = re.sub(r"^```\s*", "", texto)
+        texto = re.sub(r"\s*```$", "", texto).strip()
+
+        try:
+            resultado = json.loads(texto)
+            if isinstance(resultado, dict):
+                return resultado
+        except json.JSONDecodeError:
+            pass
+
+        inicio, fim = texto.find("{"), texto.rfind("}")
+        if inicio == -1 or fim <= inicio:
+            raise ValueError("O modelo nÃ£o retornou um JSON vÃ¡lido.")
+
+        try:
+            resultado = json.loads(texto[inicio : fim + 1])
+        except json.JSONDecodeError as e:
+            raise ValueError(f"JSON retornado pelo modelo Ã© invÃ¡lido: {e}")
+
+        if not isinstance(resultado, dict):
+            raise ValueError("A resposta JSON nÃ£o Ã© um objeto.")
+        return resultado
+
+    # ------------------------------------------------------------------
+    # NormalizaÃ§Ã£o
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _para_float(valor: Any) -> float:
+        if isinstance(valor, bool):
+            return 0.0
+        if isinstance(valor, (int, float)):
+            return float(valor)
+        if isinstance(valor, str):
+            texto = re.sub(r"[^\d,.\-]", "", valor)
+            if not texto:
+                return 0.0
+            if "," in texto and "." in texto:
+                if texto.rfind(",") > texto.rfind("."):
+                    texto = texto.replace(".", "").replace(",", ".")
+                else:
+                    texto = texto.replace(",", "")
+            elif "," in texto:
+                texto = texto.replace(",", ".")
+            try:
+                return float(texto)
+            except ValueError:
+                return 0.0
+        return 0.0
+
+    @staticmethod
+    def _para_texto(valor: Any) -> str:
+        return "" if valor is None else str(valor).strip()
+
+    @classmethod
+    def _normalizar_data(cls, valor: Any, hoje_str: str) -> str:
+        texto = cls._para_texto(valor)
+
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", texto):
+            try:
+                date.fromisoformat(texto)
+                return texto
+            except ValueError:
+                return hoje_str
+
+        m = re.fullmatch(r"(\d{2})/(\d{2})/(\d{4})", texto)
+        if m:
+            try:
+                return date(int(m.group(3)), int(m.group(2)), int(m.group(1))).isoformat()
+            except ValueError:
+                return hoje_str
+
+        return hoje_str
+
+
+    @classmethod
+    def _detectar_parcelamento_texto(
+        cls,
+        texto: str
+    ) -> tuple[bool, int, float]:
+        """Detecta parcelamentos em textos de comprovantes."""
+
+        if not texto:
+            return False, 1, 0.0
+
+        texto = texto.strip()
+
+        # Exemplo: PARC. 1/6, PARCELA 1/6, 01/06
+        padrao_fracao = (
+            r"(?:parc(?:ela|elas)?\.?\s*)?"
+            r"\d{1,2}\s*/\s*(\d{1,2})"
+        )
+
+        m = re.search(padrao_fracao, texto, re.IGNORECASE)
+
+        if m:
+            num = int(m.group(1))
+
+            if 2 <= num <= 36:
+                return True, num, 0.0
+
+        # Exemplo: 3x de R$ 50,00
+        m = re.search(
+            r"(\d{1,2})\s*[xX]\s*(?:de\s*)?R?\$?\s*([\d.,]+)",
+            texto
+        )
+
+        if m:
+            num = int(m.group(1))
+
+            if 2 <= num <= 36:
+                val_str = m.group(2)
+
+                if "," in val_str and "." in val_str:
+                    if val_str.rfind(",") > val_str.rfind("."):
+                        val_str = val_str.replace(".", "").replace(",", ".")
+                    else:
+                        val_str = val_str.replace(",", "")
+                elif "," in val_str:
+                    val_str = val_str.replace(",", ".")
+
+                try:
+                    valor = float(val_str)
+                except ValueError:
+                    valor = 0.0
+
+                return True, num, valor
+
+        # Exemplo: parcelado em 6, parcelas: 6, parc. 6
+        m = re.search(
+            r"(?:parcel(?:as?|ado\s*em)|parc\.?)"
+            r"\s*:?\s*(\d{1,2})(?!\s*/)",
+            texto,
+            re.IGNORECASE
+        )
+
+        if m:
+            num = int(m.group(1))
+
+            if 2 <= num <= 36:
+                return True, num, 0.0
+
+        # Exemplo: 6 parcelas
+        m = re.search(
+            r"(\d{1,2})\s*parcelas",
+            texto,
+            re.IGNORECASE
+        )
+
+        if m:
+            num = int(m.group(1))
+
+            if 2 <= num <= 36:
+                return True, num, 0.0
+
+        return False, 1, 0.0
+
+
+    @classmethod
+    def _normalizar_resultado(cls, dados: dict[str, Any], hoje_str: str) -> dict[str, Any]:
+        tipo_transacao = cls._para_texto(dados.get("tipo_transacao")).lower()
+        if tipo_transacao not in cls.TIPOS_TRANSACAO:
+            tipo_transacao = "despesa"
+
+        forma_pagamento = cls._para_texto(dados.get("forma_pagamento"))
+        if forma_pagamento not in cls.FORMAS_PAGAMENTO:
+            forma_pagamento = ""
+
+        tipo_receita = cls._para_texto(dados.get("tipo_receita"))
+        if tipo_receita not in cls.TIPOS_RECEITA:
+            tipo_receita = "Outros"
+
+        itens_brutos = dados.get("itens")
+        if not isinstance(itens_brutos, list):
+            itens_brutos = []
+
+        itens = []
+        for item in itens_brutos:
+            if not isinstance(item, dict):
+                continue
+            itens.append(
+                {
+                    "descricao": cls._para_texto(item.get("descricao")),
+                    "valor": round(cls._para_float(item.get("valor")), 2),
+                    "categoria_sugerida": cls._para_texto(item.get("categoria_sugerida")),
+                }
+            )
+
+        valor_total = round(cls._para_float(dados.get("valor_total")), 2)
+        observacoes = cls._para_texto(dados.get("observacoes"))
+
+        # ExtraÃ§Ã£o de dados de parcelamento
+        
+        # Converte booleanos sem interpretar a string "false" como True.
+        valor_booleano = dados.get("is_parcelado", False)
+
+        if isinstance(valor_booleano, bool):
+            is_parcelado = valor_booleano
+        elif isinstance(valor_booleano, str):
+            is_parcelado = valor_booleano.strip().lower() in (
+                "true", "1", "sim", "yes"
+            )
+        else:
+            is_parcelado = valor_booleano == 1
+
+        numero_parcelas = int(
+            cls._para_float(dados.get("numero_parcelas") or 1)
+        )
+
+        numero_parcelas = max(1, min(numero_parcelas, 36))
+
+        valor_parcela = round(
+            cls._para_float(dados.get("valor_parcela")),
+            2
+        )
+
+
+        # Se a IA nÃ£o sinalizou no schema mas o texto tem evidÃªncia de parcelamento
+        if not is_parcelado or numero_parcelas <= 1:
+            texto_busca = f"{observacoes} {dados.get('estabelecimento', '')} " + " ".join(i.get('descricao', '') for i in itens)
+            det, num_det, val_det = cls._detectar_parcelamento_texto(texto_busca)
+            if det:
+                is_parcelado = True
+                numero_parcelas = num_det
+                if val_det > 0 and valor_parcela == 0:
+                    valor_parcela = val_det
+
+        if numero_parcelas > 1:
+            is_parcelado = True
+            if not forma_pagamento or forma_pagamento not in ["CartÃ£o de CrÃ©dito"]:
+                forma_pagamento = "CartÃ£o de CrÃ©dito"
+            if valor_parcela == 0 and valor_total > 0:
+                valor_parcela = round(valor_total / numero_parcelas, 2)
+        else:
+            numero_parcelas = 1
+
+        if itens:
+            soma = round(sum(i["valor"] for i in itens), 2)
+            if soma == 0.0 and valor_total > 0:
+                # Itens sem valor no documento: lanÃ§a um Ãºnico item com o total.
+                primeiro = itens[0]
+                itens = [
+                    {
+                        "descricao": primeiro["descricao"] or "Total do documento",
+                        "valor": valor_total,
+                        "categoria_sugerida": primeiro["categoria_sugerida"],
+                    }
+                ]
+                aviso = (
+                    "Os itens do documento estavam com valor 0,00; foi lanÃ§ado "
+                    "um Ãºnico item com o valor total."
+                )
+                observacoes = f"{observacoes}\n{aviso}".strip()
+            elif valor_total == 0.0 and soma > 0:
+                valor_total = soma
+            elif abs(soma - valor_total) > 0.05:
+                aviso = (
+                    f"ATENÃ‡ÃƒO: a soma dos itens (R$ {soma:.2f}) difere do "
+                    f"total (R$ {valor_total:.2f}). Confira antes de salvar."
+                )
+                observacoes = f"{observacoes}\n{aviso}".strip()
+
+        return {
+            "tipo_transacao": tipo_transacao,
+            "data": cls._normalizar_data(dados.get("data"), hoje_str),
+            "estabelecimento": cls._para_texto(dados.get("estabelecimento")),
+            "forma_pagamento": forma_pagamento,
+            "tipo_receita": tipo_receita,
+            "valor_total": valor_total,
+            "is_parcelado": is_parcelado,
+            "numero_parcelas": numero_parcelas,
+            "valor_parcela": valor_parcela,
+            "itens": itens,
+            "observacoes": observacoes,
+        }
+
+    # ------------------------------------------------------------------
+    # Erro
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _gerar_resultado_manual(cls, mensagem: str, hoje_str: str) -> dict[str, Any]:
+        return cls._gerar_resultado_erro(mensagem, hoje_str)
+
+    @staticmethod
+    def _gerar_resultado_erro(mensagem: str, hoje_str: str) -> dict[str, Any]:
+        """Estrutura segura em caso de falha. Nunca gera valores fictÃ­cios."""
+        return {
+            "tipo_transacao": "",
+            "data": hoje_str,
+            "estabelecimento": "",
+            "forma_pagamento": "",
+            "tipo_receita": "",
+            "valor_total": 0.00,
+            "is_parcelado": False,
+            "numero_parcelas": 1,
+            "valor_parcela": 0.0,
+            "itens": [],
+            "observacoes": "",
+            "ia_sucesso": False,
+            "modo_demo": False,
+            "erro_msg": mensagem,
+        }
+
+
+==================================================
+ARQUIVO: app/routes/ia_fiscal.py
+==================================================
+import logging
+import os
+import threading
+import time
+import uuid
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+
+from flask import (
+    Blueprint,
+    abort,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    session,
+    url_for,
+)
+
+from app.services.ai_fiscal_service import AiFiscalService
+from app.services.categoria_service import CategoriaService
+from app.services.comprovante_service import promover_temporario_para_comprovante
+from app.services.gasto_service import GastoService
+from app.services.receita_service import ReceitaService
+from app.utils import login_required
+
+logger = logging.getLogger(__name__)
+
+ia_fiscal_bp = Blueprint("ia_fiscal", __name__, url_prefix="/ia")
+
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "pdf"}
+FORMAS_PAGAMENTO = [
+    "Pix",
+    "Dinheiro",
+    "CartÃ£o de DÃ©bito",
+    "CartÃ£o de CrÃ©dito",
+    "TransferÃªncia",
+]
+TIPOS_RECEITA = [
+    "Venda",
+    "Encomenda",
+    "ServiÃ§o",
+    "Delivery",
+    "Feira/Evento",
+    "Outros",
+]
+
+TMP_IA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "tmp_ia"
+)
+
+# ----------------------------------------------------------------------
+# Processamento em segundo plano
+#
+# O estado dos jobs fica em memÃ³ria. Isso funciona porque o app roda com
+# um Ãºnico worker do gunicorn (--workers 1). Com mais de um worker, os
+# jobs precisariam ser guardados no banco ou no Redis.
+# ----------------------------------------------------------------------
+_JOBS: dict[str, dict] = {}
+_JOBS_LOCK = threading.Lock()
+
+JOB_TTL_SEGUNDOS = 900          # remove jobs apÃ³s 15 minutos
+
+
+def _ensure_tmp_dir() -> None:
+    os.makedirs(TMP_IA_DIR, exist_ok=True)
+
+
+def allowed_file(filename: str) -> bool:
+    return (
+        bool(filename)
+        and "." in filename
+        and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+    )
+
+
+def _preview_path(token: str, ext: str) -> str:
+    safe_token = "".join(
+        c for c in token if c.isalnum() or c == "-"
+    )
+    safe_ext = "".join(c for c in ext if c.isalnum())
+
+    if not safe_token or safe_ext not in ALLOWED_EXTENSIONS:
+        raise ValueError("Identificador de prÃ©via invÃ¡lido.")
+
+    return os.path.join(TMP_IA_DIR, f"{safe_token}.{safe_ext}")
+
+
+def _limpar_preview_temporario(ia_session: dict | None = None) -> None:
+    data = ia_session if ia_session is not None else session.get("ia_preview")
+
+    if not data:
+        return
+
+    token = data.get("file_token")
+    ext = data.get("ext")
+
+    if not token or not ext:
+        return
+
+    try:
+        path = _preview_path(token, ext)
+
+        if os.path.isfile(path):
+            os.remove(path)
+
+    except (OSError, ValueError):
+        logger.exception("NÃ£o foi possÃ­vel remover a prÃ©via temporÃ¡ria.")
+
+
+def _converter_valor(valor) -> Decimal | None:
+    """Converte valor monetÃ¡rio brasileiro ou decimal para centavos."""
+    if valor is None:
+        return None
+
+    texto = str(valor).strip().replace("R$", "").replace(" ", "")
+
+    if not texto:
+        return None
+
+    if "," in texto and "." in texto:
+        if texto.rfind(",") > texto.rfind("."):
+            texto = texto.replace(".", "").replace(",", ".")
+        else:
+            texto = texto.replace(",", "")
+    elif "," in texto:
+        texto = texto.replace(".", "").replace(",", ".")
+
+    try:
+        resultado = Decimal(texto).quantize(Decimal("0.01"))
+        return resultado if resultado.is_finite() else None
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _obter_data_formulario() -> date | None:
+    data_str = request.form.get("data", "").strip()
+
+    try:
+        return datetime.strptime(data_str, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+
+
+def _limpar_jobs_antigos() -> None:
+    limite = time.time() - JOB_TTL_SEGUNDOS
+
+    with _JOBS_LOCK:
+        antigos = [
+            job_id
+            for job_id, job in _JOBS.items()
+            if job.get("criado", 0) < limite
+            and job.get("status") != "processando"
+        ]
+
+        for job_id in antigos:
+            _JOBS.pop(job_id, None)
+
+
+def _usuario_tem_job_ativo(id_usuario) -> bool:
+    with _JOBS_LOCK:
+        return any(
+            job.get("usuario") == id_usuario
+            and job.get("status") == "processando"
+            for job in _JOBS.values()
+        )
+
+
+def _executar_job(
+    job_id: str,
+    file_bytes: bytes,
+    mimetype: str,
+    ext: str,
+    filename: str,
+    origem: str,
+    cat_nomes: list[str],
+) -> None:
+    """
+    Roda fora da requisiÃ§Ã£o. NÃ£o pode usar session, request nem flash:
+    o resultado Ã© entregue pela rota /ia/status.
+    """
+    try:
+        resultado = AiFiscalService.interpretar_documento(
+            file_bytes,
+            mimetype,
+            cat_nomes
+        )
+
+        if not isinstance(resultado, dict):
+            raise ValueError("O serviÃ§o de leitura retornou dados invÃ¡lidos.")
+
+        _ensure_tmp_dir()
+
+        token = str(uuid.uuid4())
+
+        with open(_preview_path(token, ext), "wb") as arquivo:
+            arquivo.write(file_bytes)
+
+        novo_estado = {
+            "status": "ok",
+            "preview": {
+                "dados": resultado,
+                "file_token": token,
+                "ext": ext,
+                "mimetype": mimetype,
+                "filename": os.path.basename(filename),
+                "origem": origem,
+            },
+        }
+
+    except Exception as erro:
+        from app.services.planilha_produto_service import OCROcupadoError
+
+        if isinstance(erro, OCROcupadoError):
+            logger.warning(
+                "OCR ocupado | Job fiscal %s recusado: %s",
+                job_id,
+                erro
+            )
+            mensagem = str(erro)
+        else:
+            logger.exception(
+                "Erro ao processar documento fiscal (job %s).", job_id
+            )
+            mensagem = "Nao foi possivel processar o arquivo enviado."
+
+        novo_estado = {
+            "status": "erro",
+            "msg": mensagem,
+        }
+
+    with _JOBS_LOCK:
+        if job_id in _JOBS:
+            _JOBS[job_id].update(novo_estado)
+
+
+def _json_erro(msg: str, codigo: int = 400):
+    return jsonify(status="erro", msg=msg), codigo
+
+
+@ia_fiscal_bp.route("/")
+@login_required
+def upload():
+    tem_chave_api = AiFiscalService.is_configurado()
+
+    return render_template(
+        "ia/upload.html",
+        tem_chave_api=tem_chave_api
+    )
+
+
+@ia_fiscal_bp.route("/processar", methods=["POST"])
+@login_required
+def processar():
+    """
+    Valida o arquivo e inicia a leitura em segundo plano.
+    Responde na hora com um job_id; a pÃ¡gina consulta /ia/status/<job_id>.
+    """
+    file = request.files.get("documento")
+
+    if not file or not file.filename:
+        return _json_erro("Selecione um arquivo de imagem ou PDF.")
+
+    if not allowed_file(file.filename):
+        return _json_erro(
+            "Formato nÃ£o suportado. Envie PNG, JPG, JPEG, WEBP ou PDF."
+        )
+
+    ext = file.filename.rsplit(".", 1)[1].lower()
+    file_bytes = file.read()
+
+    logger.info(
+        "UPLOAD | MIME: %s | ExtensÃ£o: %s | Bytes: %d",
+        file.mimetype,
+        ext,
+        len(file_bytes)
+    )
+
+    if not file_bytes:
+        return _json_erro("O arquivo enviado estÃ¡ vazio.")
+
+    if len(file_bytes) > 16 * 1024 * 1024:
+        return _json_erro("Arquivo muito grande (mÃ¡ximo 16 MB).")
+
+    mimetypes = {
+        "pdf": "application/pdf",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "webp": "image/webp",
+    }
+    mimetype = mimetypes[ext]
+
+    id_usuario = session.get("id_usuario")
+
+    _limpar_jobs_antigos()
+
+    # Evita empilhar leituras: o OCR Ã© compartilhado e novas tentativas
+    # sÃ³ ficariam esperando na fila.
+    if _usuario_tem_job_ativo(id_usuario):
+        return _json_erro(
+            "JÃ¡ existe uma leitura em andamento. "
+            "Aguarde alguns segundos e tente novamente.",
+            409
+        )
+
+    try:
+        cat_nomes = [
+            c.nome_categoria for c in CategoriaService.listar_todas()
+        ]
+    except Exception:
+        logger.exception("Erro ao carregar categorias.")
+        return _json_erro(
+            "NÃ£o foi possÃ­vel carregar as categorias.", 500
+        )
+
+    job_id = uuid.uuid4().hex
+
+    with _JOBS_LOCK:
+        _JOBS[job_id] = {
+            "status": "processando",
+            "criado": time.time(),
+            "usuario": id_usuario,
+            "entregue": False,
+        }
+
+    try:
+        threading.Thread(
+            target=_executar_job,
+            args=(
+                job_id,
+                file_bytes,
+                mimetype,
+                ext,
+                file.filename,
+                request.form.get("origem", "despesa"),
+                cat_nomes,
+            ),
+            daemon=True,
+        ).start()
+    except Exception:
+        logger.exception(
+            "Nao foi possivel iniciar a thread do job fiscal %s.",
+            job_id
+        )
+        with _JOBS_LOCK:
+            _JOBS.pop(job_id, None)
+        return _json_erro(
+            "Nao foi possivel iniciar o processamento. Tente novamente.",
+            500
+        )
+
+    return jsonify(status="processando", job_id=job_id), 202
+
+
+@ia_fiscal_bp.route("/status/<job_id>")
+@login_required
+def status(job_id):
+    """Informa o andamento da leitura e, quando pronta, grava a prÃ©via na sessÃ£o."""
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id)
+
+        if job is not None:
+            job = dict(job)  # cÃ³pia para ler fora do bloqueio
+
+    if not job or job["usuario"] != session.get("id_usuario"):
+        return jsonify(status="inexistente"), 404
+
+    if job["status"] == "processando":
+        return jsonify(status="processando")
+
+    if job["status"] == "erro":
+        return jsonify(status="erro", msg=job.get("msg"))
+
+    # Pronto. A entrega Ã© idempotente: se o navegador perder a resposta
+    # (o iOS suspende a pÃ¡gina com frequÃªncia) e perguntar de novo,
+    # recebe o mesmo redirecionamento.
+    if not job["entregue"]:
+        _limpar_preview_temporario()
+        session["ia_preview"] = job["preview"]
+
+        with _JOBS_LOCK:
+            if job_id in _JOBS:
+                _JOBS[job_id]["entregue"] = True
+
+        dados = job["preview"]["dados"]
+
+        if dados.get("ia_sucesso"):
+            flash(
+                "Documento interpretado! Revise os dados antes de confirmar.",
+                "success"
+            )
+        else:
+            erro_msg = dados.get(
+                "erro_msg",
+                "NÃ£o foi possÃ­vel extrair os dados automaticamente."
+            )
+            flash(f"âš ï¸ {erro_msg}", "warning")
+
+    elif not session.get("ia_preview"):
+        session["ia_preview"] = job["preview"]
+
+    return jsonify(status="ok", redirect=url_for("ia_fiscal.revisar"))
+
+
+@ia_fiscal_bp.route("/preview")
+@login_required
+def preview():
+    from io import BytesIO
+
+    ia_session = session.get("ia_preview")
+
+    if not ia_session:
+        abort(404)
+
+    token = ia_session.get("file_token")
+    ext = ia_session.get("ext")
+
+    if not token or not ext:
+        abort(404)
+
+    try:
+        path = _preview_path(token, ext)
+    except ValueError:
+        abort(404)
+
+    if not os.path.isfile(path):
+        abort(404)
+
+    with open(path, "rb") as arquivo:
+        data = BytesIO(arquivo.read())
+
+    data.seek(0)
+
+    return send_file(
+        data,
+        mimetype=ia_session.get("mimetype", "application/octet-stream"),
+        download_name=ia_session.get("filename") or f"preview.{ext}"
+    )
+
+
+@ia_fiscal_bp.route("/revisar", methods=["GET"])
+@login_required
+def revisar():
+    ia_session = session.get("ia_preview")
+
+    if not ia_session:
+        flash("Nenhum documento aguardando revisÃ£o.", "info")
+        return redirect(url_for("ia_fiscal.upload"))
+
+    categorias = CategoriaService.listar_todas()
+    dados = ia_session.get("dados", {})
+
+    return render_template(
+        "ia/revisar.html",
+        dados=dados,
+        preview_uri=(
+            url_for("ia_fiscal.preview")
+            if ia_session.get("file_token")
+            else None
+        ),
+        is_pdf=ia_session.get("mimetype") == "application/pdf",
+        categorias=categorias,
+        formas_pagamento=FORMAS_PAGAMENTO,
+        tipos_receita=TIPOS_RECEITA
+    )
+
+
+@ia_fiscal_bp.route("/confirmar", methods=["POST"])
+@login_required
+def confirmar():
+    ia_session = session.get("ia_preview")
+
+    if not ia_session:
+        flash("A prÃ©via expirou. Envie o documento novamente.", "danger")
+        return redirect(url_for("ia_fiscal.upload"))
+
+    id_usuario = session.get("id_usuario")
+
+    if not id_usuario:
+        flash("SessÃ£o invÃ¡lida. FaÃ§a login novamente.", "danger")
+        return redirect(url_for("ia_fiscal.upload"))
+
+    tipo_transacao = request.form.get("tipo_transacao", "despesa")
+    forma_pagamento = request.form.get("forma_pagamento", "Pix").strip()
+    data_registro = _obter_data_formulario()
+
+    if tipo_transacao not in ("despesa", "receita"):
+        flash("Tipo de transaÃ§Ã£o invÃ¡lido.", "danger")
+        return redirect(url_for("ia_fiscal.revisar"))
+
+    if not data_registro:
+        flash("Informe uma data vÃ¡lida para o lanÃ§amento.", "danger")
+        return redirect(url_for("ia_fiscal.revisar"))
+
+    if forma_pagamento not in FORMAS_PAGAMENTO:
+        flash("Selecione uma forma de pagamento vÃ¡lida.", "danger")
+        return redirect(url_for("ia_fiscal.revisar"))
+
+    # Valida os dados antes de promover o comprovante.
+    itens_validos = []
+    valor_receita = None
+
+    if tipo_transacao == "despesa":
+        descricoes = request.form.getlist("item_descricao[]")
+        valores = request.form.getlist("item_valor[]")
+        categorias_ids = request.form.getlist("item_categoria[]")
+
+        if not (
+            len(descricoes) == len(valores) == len(categorias_ids)
+        ):
+            flash("Os dados dos itens estÃ£o incompletos.", "danger")
+            return redirect(url_for("ia_fiscal.revisar"))
+
+        categorias_validas = {
+            str(c.id_categoria)
+            for c in CategoriaService.listar_todas()
+        }
+
+        for desc, val, cat_id in zip(
+            descricoes,
+            valores,
+            categorias_ids
+        ):
+            desc = desc.strip()
+            valor = _converter_valor(val)
+
+            if not desc or valor is None or valor <= 0:
+                continue
+
+            if str(cat_id) not in categorias_validas:
+                continue
+
+            itens_validos.append({
+                "descricao": desc,
+                "valor": valor,
+                "id_categoria": int(cat_id)
+            })
+
+        if not itens_validos:
+            flash(
+                "Nenhum item vÃ¡lido. Confira descriÃ§Ãµes, valores e categorias.",
+                "danger"
+            )
+            return redirect(url_for("ia_fiscal.revisar"))
+
+        is_parcelado = request.form.get("is_parcelado") in (
+            "on", "1", "true", "True"
+        )
+
+        try:
+            numero_parcelas = int(
+                request.form.get("numero_parcelas", 1)
+            )
+        except (ValueError, TypeError):
+            numero_parcelas = 1
+
+        if not is_parcelado:
+            numero_parcelas = 1
+
+        if not 1 <= numero_parcelas <= 36:
+            flash("Informe um nÃºmero de parcelas entre 1 e 36.", "danger")
+            return redirect(url_for("ia_fiscal.revisar"))
+
+    else:
+        valor_receita = _converter_valor(
+            request.form.get("receita_valor")
+        )
+
+        if valor_receita is None or valor_receita <= 0:
+            flash("Valor da receita invÃ¡lido.", "danger")
+            return redirect(url_for("ia_fiscal.revisar"))
+
+        tipo_rec = request.form.get("tipo_receita", "Venda")
+
+        if tipo_rec not in TIPOS_RECEITA:
+            flash("Tipo de receita invÃ¡lido.", "danger")
+            return redirect(url_for("ia_fiscal.revisar"))
+
+        descricao_receita = (
+            request.form.get("receita_descricao")
+            or "Venda / Comprovante Fiscal"
+        ).strip()
+
+    # Promove o arquivo somente depois da validaÃ§Ã£o dos dados.
+    token = ia_session.get("file_token")
+    ext = ia_session.get("ext")
+    comprovante_nome = None
+
+    if token and ext:
+        try:
+            caminho_origem = _preview_path(token, ext)
+        except ValueError:
+            flash("Arquivo temporÃ¡rio invÃ¡lido. Envie novamente.", "danger")
+            return redirect(url_for("ia_fiscal.upload"))
+
+        if not os.path.isfile(caminho_origem):
+            flash("O arquivo temporÃ¡rio expirou. Envie novamente.", "danger")
+            return redirect(url_for("ia_fiscal.upload"))
+
+        comprovante_nome = promover_temporario_para_comprovante(
+            caminho_origem,
+            ext
+        )
+
+        if not comprovante_nome:
+            flash(
+                "NÃ£o foi possÃ­vel salvar o comprovante. Tente novamente.",
+                "danger"
+            )
+            return redirect(url_for("ia_fiscal.revisar"))
+
+    try:
+        if tipo_transacao == "despesa":
+            id_parcelamento = (
+                str(uuid.uuid4()) if numero_parcelas > 1 else None
+            )
+
+            for item in itens_validos:
+                dados_item = {
+                    "valor": item["valor"],
+                    "data_gasto": data_registro,
+                    "forma_pagamento": forma_pagamento,
+                    "descricao": item["descricao"],
+                    "id_usuario": id_usuario,
+                    "id_categoria": item["id_categoria"],
+                    "id_parcelamento": id_parcelamento,
+                    "comprovante": comprovante_nome,
+                }
+
+                if numero_parcelas > 1:
+                    GastoService.criar_gasto_parcelado(
+                        dados_item,
+                        numero_parcelas
+                    )
+                else:
+                    GastoService.criar_gasto(dados_item)
+
+            total_adicionados = len(itens_validos)
+
+        else:
+            ReceitaService.criar_receita({
+                "valor": valor_receita,
+                "data_receita": data_registro,
+                "forma_recebimento": forma_pagamento,
+                "tipo_receita": tipo_rec,
+                "descricao": descricao_receita,
+                "comprovante": comprovante_nome,
+                "id_usuario": id_usuario
+            })
+
+    except Exception:
+        logger.exception("Erro ao salvar transaÃ§Ã£o confirmada pela IA.")
+
+        # Se o arquivo foi promovido mas a transaÃ§Ã£o falhou, tenta removÃª-lo.
+        if comprovante_nome:
+            from app.services.comprovante_service import (
+                remover_arquivo_comprovante
+            )
+            remover_arquivo_comprovante(comprovante_nome)
+
+        flash(
+            "NÃ£o foi possÃ­vel salvar o lanÃ§amento. Confira os dados e tente novamente.",
+            "danger"
+        )
+        return redirect(url_for("ia_fiscal.revisar"))
+
+    _limpar_preview_temporario()
+    session.pop("ia_preview", None)
+
+    if tipo_transacao == "despesa":
+        if numero_parcelas > 1:
+            flash(
+                f"Compra registrada! {total_adicionados} item(ns) "
+                f"distribuÃ­do(s) em {numero_parcelas} parcelas.",
+                "success"
+            )
+        else:
+            flash(
+                f"{total_adicionados} despesa(s) registrada(s) com sucesso!",
+                "success"
+            )
+
+        return redirect(url_for("gastos.listar"))
+
+    flash("Receita registrada com sucesso!", "success")
+    return redirect(url_for("receitas.listar"))
+
+
+@ia_fiscal_bp.route("/cancelar")
+@login_required
+def cancelar():
+    origem = session.get("ia_preview", {}).get("origem", "despesa")
+
+    _limpar_preview_temporario()
+    session.pop("ia_preview", None)
+
+    flash("Leitura descartada.", "info")
+
+    if origem == "receita":
+        return redirect(url_for("receitas.nova"))
+
+    return redirect(url_for("gastos.novo"))
+
+
+==================================================
+ARQUIVO: app/routes/reajuste_ipca.py
+==================================================
+import io
+import os
+import uuid
+import time
+import logging
+from datetime import datetime
+from flask import (
+    Blueprint, render_template, request, redirect, url_for,
+    flash, session, send_file, jsonify, abort
+)
+from app.services.bacen_service import BacenService
+from app.services.planilha_produto_service import PlanilhaProdutoService
+from app.utils import login_required
+
+logger = logging.getLogger(__name__)
+
+reajuste_ipca_bp = Blueprint('reajuste_ipca', __name__, url_prefix='/reajuste-ipca')
+
+ALLOWED_EXTENSIONS = {'pdf', 'xlsx', 'xls', 'csv', 'png', 'jpg', 'jpeg', 'webp'}
+TMP_REAJUSTE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'tmp_reajuste')
+
+# ConfiguraÃ§Ã£o do limite de tamanho do conteÃºdo do upload
+
+def _garantir_diretorio_temp():
+    os.makedirs(TMP_REAJUSTE_DIR, exist_ok=True)
+
+def _limpar_arquivos_antigos():
+    """Remove arquivos temporÃ¡rios com mais de 2 horas."""
+    try:
+        _garantir_diretorio_temp()
+        agora = time.time()
+        for f in os.listdir(TMP_REAJUSTE_DIR):
+            caminho = os.path.join(TMP_REAJUSTE_DIR, f)
+            if os.path.isfile(caminho):
+                if agora - os.path.getmtime(caminho) > 7200:
+                    os.remove(caminho)
+    except Exception as e:
+        logger.warning(f"Erro ao limpar temporÃ¡rios de reajuste: {e}")
+
+
+def allowed_file(filename: str) -> bool:
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+@reajuste_ipca_bp.route('/', methods=['GET'])
+@login_required
+def index():
+    """Exibe a tela de reajuste com indicadores do IPCA e Ã¡rea de upload."""
+    try:
+        resumo_ipca = BacenService.obter_resumo_ipca()
+    except Exception as e:
+        logger.error(f"Erro ao obter resumo IPCA: {e}")
+        resumo_ipca = {
+            'ultimo_mes': {'rotulo': 'Ref/Recente', 'valor': 0.82},
+            'acumulado_12m': 4.58,
+            'acumulado_ano': 3.95,
+            'fonte': 'referencia',
+            'atualizado_em': datetime.now().strftime("%d/%m/%Y Ã s %H:%M")
+        }
+
+    resultado_previo = session.pop('reajuste_resultado', None)
+
+    return render_template(
+        'reajuste/index.html',
+        resumo_ipca=resumo_ipca,
+        resultado=resultado_previo
+    )
+
+
+@reajuste_ipca_bp.route('/processar', methods=['POST'])
+@login_required
+def processar():
+    """Processa a planilha ou documento PDF enviado e aplica o reajuste pelo IPCA."""
+    from app.services.planilha_produto_service import OCROcupadoError
+
+    _garantir_diretorio_temp()
+    _limpar_arquivos_antigos()
+
+    if 'planilha' not in request.files:
+        flash('Nenhum arquivo enviado. Selecione uma Imagem/Print (.png, .jpg), PDF (.pdf), Excel (.xlsx) ou CSV.', 'warning')
+        return redirect(url_for('reajuste_ipca.index'))
+
+    file = request.files['planilha']
+
+    if file.filename == '':
+        flash('Nenhum arquivo selecionado.', 'warning')
+        return redirect(url_for('reajuste_ipca.index'))
+
+    if not allowed_file(file.filename):
+        flash('Formato invÃ¡lido. Por favor envie uma Imagem/Print (.png, .jpg, .jpeg, .webp), PDF (.pdf), Excel (.xlsx, .xls) ou CSV (.csv).', 'danger')
+        return redirect(url_for('reajuste_ipca.index'))
+
+    # Valida o tamanho individual do arquivo (limite de 16 MB).
+    try:
+        file.stream.seek(0, os.SEEK_END)
+        tamanho_arquivo = file.stream.tell()
+        file.stream.seek(0)
+    except (OSError, AttributeError, ValueError):
+        logger.exception("N\u00e3o foi poss\u00edvel verificar o tamanho do arquivo enviado.")
+        flash('N\u00e3o foi poss\u00edvel validar o arquivo enviado. Tente novamente.', 'danger')
+        return redirect(url_for('reajuste_ipca.index'))
+
+    if tamanho_arquivo > 16 * 1024 * 1024:
+        flash('Arquivo muito grande. O limite permitido \u00e9 de 16 MB.', 'warning')
+        return redirect(url_for('reajuste_ipca.index'))
+
+    modalidade = request.form.get('modalidade', '12_meses')
+    regra_arredondamento = request.form.get('regra_arredondamento', 'padrao')
+    coluna_preco_selecionada = request.form.get('coluna_preco', '').strip() or None
+    mes_vigencia = request.form.get('mes_vigencia', '').strip() or None
+
+    try:
+        margem_str = request.form.get('margem_adicional', '0').replace(',', '.').strip()
+        margem_adicional = float(margem_str) if margem_str else 0.0
+    except ValueError:
+        margem_adicional = 0.0
+
+    taxa_manual = None
+
+    if modalidade == 'personalizado':
+        try:
+            taxa_str = request.form.get('taxa_manual', '').replace(',', '.').strip()
+            taxa_manual = float(taxa_str) if taxa_str else 0.0
+        except ValueError:
+            taxa_manual = 0.0
+
+    try:
+        resultado = PlanilhaProdutoService.processar_reajuste(
+            arquivo_stream=file.stream,
+            nome_arquivo=file.filename,
+            modalidade=modalidade,
+            margem_adicional=margem_adicional,
+            regra_arredondamento=regra_arredondamento,
+            coluna_preco_selecionada=coluna_preco_selecionada,
+            taxa_manual=taxa_manual,
+            mes_vigencia=mes_vigencia
+        )
+
+        token = uuid.uuid4().hex
+
+        caminho_pdf = os.path.join(TMP_REAJUSTE_DIR, f"{token}.pdf")
+        with open(caminho_pdf, 'wb') as f:
+            f.write(resultado['pdf_bytes'])
+
+        caminho_excel = os.path.join(TMP_REAJUSTE_DIR, f"{token}.xlsx")
+        with open(caminho_excel, 'wb') as f:
+            f.write(resultado['excel_bytes'])
+
+        resultado_sessao = {
+            'token': token,
+            'nome_arquivo_pdf': resultado['nome_arquivo_pdf'],
+            'nome_arquivo_excel': resultado['nome_arquivo_excel'],
+            'nome_arquivo_origem': file.filename,
+            'kpis': resultado['kpis'],
+            'linhas_previa': resultado['linhas_previa']
+        }
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
+            return jsonify({
+                'sucesso': True,
+                'token': token,
+                'download_pdf_url': url_for('reajuste_ipca.download_pdf', token=token),
+                'download_excel_url': url_for('reajuste_ipca.download_excel', token=token),
+                'kpis': resultado['kpis'],
+                'linhas_previa': resultado['linhas_previa']
+            })
+
+        session['reajuste_resultado'] = resultado_sessao
+        flash('Produtos reajustados com sucesso de acordo com o IPCA oficial do Banco Central!', 'success')
+        return redirect(url_for('reajuste_ipca.index'))
+
+    except OCROcupadoError as e:
+        logger.warning("OCR ocupado durante reajuste IPCA: %s", e)
+
+        mensagem = str(e)
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
+            return jsonify({
+                'sucesso': False,
+                'erro': mensagem
+            }), 409
+
+        flash(mensagem, 'warning')
+        return redirect(url_for('reajuste_ipca.index'))
+
+    except Exception as e:
+        logger.exception("Erro ao processar reajuste de documento/planilha")
+        msg_erro = str(e)
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
+            return jsonify({'sucesso': False, 'erro': msg_erro}), 400
+
+        flash(f'Erro ao processar documento: {msg_erro}', 'danger')
+        return redirect(url_for('reajuste_ipca.index'))
+@reajuste_ipca_bp.route('/download/<token>', methods=['GET'])
+@reajuste_ipca_bp.route('/download-pdf/<token>', methods=['GET'])
+@login_required
+def download_pdf(token: str):
+    """Download do catÃ¡logo/tabela reajustada em formato PDF."""
+    safe_token = ''.join(c for c in token if c.isalnum())
+    caminho_arquivo = os.path.join(TMP_REAJUSTE_DIR, f"{safe_token}.pdf")
+
+    if not os.path.isfile(caminho_arquivo):
+        flash('O arquivo solicitado expirou ou nÃ£o foi encontrado. Por favor processe novamente.', 'warning')
+        return redirect(url_for('reajuste_ipca.index'))
+
+    nome_download = f"tabela_produtos_reajustada_ipca_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    return send_file(
+        caminho_arquivo,
+        as_attachment=True,
+        download_name=nome_download,
+        mimetype='application/pdf'
+    )
+
+
+@reajuste_ipca_bp.route('/download-excel/<token>', methods=['GET'])
+@login_required
+def download_excel(token: str):
+    """Download alternativo da planilha reajustada em Excel (.xlsx)."""
+    safe_token = ''.join(c for c in token if c.isalnum())
+    caminho_arquivo = os.path.join(TMP_REAJUSTE_DIR, f"{safe_token}.xlsx")
+
+    if not os.path.isfile(caminho_arquivo):
+        flash('O arquivo solicitado expirou ou nÃ£o foi encontrado. Por favor processe novamente.', 'warning')
+        return redirect(url_for('reajuste_ipca.index'))
+
+    nome_download = f"tabela_produtos_reajustada_ipca_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    return send_file(
+        caminho_arquivo,
+        as_attachment=True,
+        download_name=nome_download,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+
+
+@reajuste_ipca_bp.route('/modelo', methods=['GET'])
+@reajuste_ipca_bp.route('/modelo-pdf', methods=['GET'])
+@login_required
+def baixar_modelo_pdf():
+    """Gera e envia o modelo de tabela de produtos em PDF."""
+    try:
+        pdf_bytes = PlanilhaProdutoService.gerar_pdf_modelo()
+        return send_file(
+            io.BytesIO(pdf_bytes),
+            as_attachment=True,
+            download_name='modelo_tabela_produtos.pdf',
+            mimetype='application/pdf'
+        )
+    except Exception as e:
+        logger.error(f"Erro ao gerar modelo em PDF: {e}")
+        flash('NÃ£o foi possÃ­vel gerar o modelo em PDF no momento.', 'danger')
+        return redirect(url_for('reajuste_ipca.index'))
+
+
+@reajuste_ipca_bp.route('/modelo-excel', methods=['GET'])
+@login_required
+def baixar_modelo_excel():
+    """Gera e envia a planilha modelo de produtos em Excel (.xlsx)."""
+    try:
+        excel_bytes = PlanilhaProdutoService.gerar_planilha_modelo()
+        return send_file(
+            io.BytesIO(excel_bytes),
+            as_attachment=True,
+            download_name='modelo_tabela_produtos.xlsx',
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    except Exception as e:
+        logger.error(f"Erro ao gerar modelo em Excel: {e}")
+        flash('NÃ£o foi possÃ­vel gerar a planilha modelo no momento.', 'danger')
+        return redirect(url_for('reajuste_ipca.index'))
+
+
+@reajuste_ipca_bp.route('/api/resumo', methods=['GET'])
+@login_required
+def api_resumo():
+    """Retorna os dados oficiais mais recentes do IPCA via JSON."""
+    forcar = request.args.get('forcar', '0') == '1'
+    try:
+        dados = BacenService.obter_resumo_ipca(forcar_atualizacao=forcar)
+        return jsonify({'sucesso': True, 'dados': dados})
+    except Exception as e:
+        return jsonify({'sucesso': False, 'erro': str(e)}), 500
+
+
+
+==================================================
+ARQUIVO: extrator_nota.py
+==================================================
+"""
+extrator_nota.py â€” Extrator de notas fiscais, boletos e comprovantes em PDF e imagens
+sem dependÃªncia de IA ou GPU, utilizando pdfplumber, RapidOCR e expressÃµes regulares.
+
+Projetado para rodar em hardware modesto (ex: Intel Celeron, 4GB RAM).
+
+Retorna um dicionÃ¡rio com:
+{
+    'fornecedor': str,
+    'data': str (AAAA-MM-DD),
+    'forma_pagamento': str,
+    'parcelas': int,
+    'valor_total': float,
+    'itens': list[dict]
+}
+"""
+
+import io
+import re
+import logging
+import time
+import hashlib
+import copy
+
+from datetime import datetime
+from typing import Any
+
+import pdfplumber
+
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# RAPIDOCR COMPARTILHADO
+# ============================================================
+
+def _obter_ocr_engine():
+    """ObtÃ©m a instÃ¢ncia compartilhada do RapidOCR."""
+    from app.services.planilha_produto_service import (
+        _obter_ocr_engine as obter
+    )
+
+    return obter()
+
+
+def _executar_ocr(imagem):
+    """Executa o OCR utilizando o bloqueio compartilhado."""
+    from app.services.planilha_produto_service import (
+        _executar_ocr as executar
+    )
+
+    return executar(imagem)
+
+
+def _obter_ocr_cache(chave: str):
+    """ObtÃ©m resultado do OCR em cache."""
+    try:
+        from app.services.planilha_produto_service import _obter_ocr_cache as obter
+        return obter(chave)
+    except Exception:
+        return None
+
+
+def _salvar_ocr_cache(chave: str, valor):
+    """Salva resultado do OCR em cache."""
+    try:
+        from app.services.planilha_produto_service import _salvar_ocr_cache as salvar
+        salvar(chave, valor)
+    except Exception:
+        pass
+
+
+# ============================================================
+# OCR DE IMAGENS
+# ============================================================
+
+def _imagem_bytes_para_texto_ocr(image_bytes: bytes) -> str:
+    """
+    Recebe bytes de uma imagem e retorna o texto extraÃ­do
+    via RapidOCR, registrando o tempo de cada etapa.
+    """
+
+    import numpy as np
+    import os
+
+    from PIL import Image, ImageOps
+
+    inicio_total = time.perf_counter()
+
+    logger.info(
+        "OCR | Iniciando processamento | Tamanho: %.2f MB",
+        len(image_bytes) / (1024 * 1024)
+    )
+
+    # ETAPA 1: Obter o motor OCR
+    inicio = time.perf_counter()
+
+    try:
+        _obter_ocr_engine()
+
+    except Exception:
+        logger.exception("OCR | Erro ao obter/inicializar o motor")
+        raise
+
+    tempo_motor = time.perf_counter() - inicio
+
+    logger.info(
+        "OCR | Motor obtido em %.2f segundos",
+        tempo_motor
+    )
+
+    # ETAPA 2: Abrir e preparar a imagem
+    inicio = time.perf_counter()
+
+    try:
+        lado_max = int(os.getenv("OCR_MAX_LADO", "1280"))
+        alvo = int(os.getenv("OCR_ALVO", "1280"))
+
+        with Image.open(io.BytesIO(image_bytes)) as imagem_original:
+            largura_original, altura_original = imagem_original.size
+
+            # JPEG: o decodificador jÃ¡ entrega a imagem reduzida (bem menos RAM).
+            if imagem_original.format == "JPEG":
+                imagem_original.draft("RGB", (lado_max, lado_max))
+
+            img = ImageOps.exif_transpose(imagem_original).convert("RGB")
+
+        # Limita o tamanho mÃ¡ximo da imagem
+        img.thumbnail((lado_max, lado_max))
+
+        # Amplia imagens pequenas somente quando necessÃ¡rio
+        fator = min(3, max(1, round(alvo / max(img.size))))
+
+        if fator > 1:
+            img = img.resize(
+                (img.width * fator, img.height * fator),
+                Image.LANCZOS
+            )
+
+        largura_final, altura_final = img.size
+
+        imagem_np = np.array(img)
+
+        logger.info(
+            "OCR | Imagem preparada | Original: %sx%s | Final: %sx%s",
+            largura_original,
+            altura_original,
+            largura_final,
+            altura_final
+        )
+
+    except Exception:
+        logger.exception("OCR | Erro ao preparar a imagem")
+        raise
+
+    tempo_preparo = time.perf_counter() - inicio
+
+    logger.info(
+        "OCR | PreparaÃ§Ã£o concluÃ­da em %.2f segundos",
+        tempo_preparo
+    )
+
+    # ETAPA 3: Executar o RapidOCR
+    inicio = time.perf_counter()
+
+    try:
+        logger.info(
+            "OCR | Aguardando execuÃ§Ã£o compartilhada do RapidOCR"
+        )
+
+        res, _ = _executar_ocr(imagem_np)
+
+        tempo_inferencia = time.perf_counter() - inicio
+
+        quantidade = len(res) if res else 0
+
+        logger.info(
+            "OCR | InferÃªncia concluÃ­da em %.2f segundos | "
+            "Caixas detectadas: %d",
+            tempo_inferencia,
+            quantidade
+        )
+
+    except Exception:
+        logger.exception("OCR | Erro durante a inferÃªncia")
+        raise
+
+    if not res:
+        logger.warning("OCR | Nenhum texto detectado")
+
+        logger.info(
+            "OCR | Processamento total: %.2f segundos",
+            time.perf_counter() - inicio_total
+        )
+
+        return ""
+
+    # ETAPA 4: Organizar os textos por linha
+    inicio = time.perf_counter()
+
+    caixas = []
+
+    for box, texto, *_ in res:
+        texto = str(texto).strip()
+
+        if not texto:
+            continue
+
+        ys = [p[1] for p in box]
+        xs = [p[0] for p in box]
+
+        caixas.append({
+            "texto": texto,
+            "y": (min(ys) + max(ys)) / 2.0,
+            "x": min(xs),
+            "h": max(ys) - min(ys)
+        })
+
+    if not caixas:
+        logger.warning("OCR | Nenhuma caixa de texto utilizÃ¡vel")
+
+        logger.info(
+            "OCR | Processamento total: %.2f segundos",
+            time.perf_counter() - inicio_total
+        )
+
+        return ""
+
+    altura_mediana = sorted(
+        c["h"] for c in caixas
+    )[len(caixas) // 2]
+
+    tolerancia = max(4.0, 0.6 * altura_mediana)
+
+    caixas.sort(key=lambda c: c["y"])
+
+    linhas_agrupadas = []
+
+    for c in caixas:
+        if (
+            linhas_agrupadas
+            and abs(linhas_agrupadas[-1]["y"] - c["y"]) <= tolerancia
+        ):
+            linhas_agrupadas[-1]["itens"].append(c)
+
+            linhas_agrupadas[-1]["y"] += (
+                c["y"] - linhas_agrupadas[-1]["y"]
+            ) / len(linhas_agrupadas[-1]["itens"])
+
+        else:
+            linhas_agrupadas.append({
+                "y": c["y"],
+                "itens": [c]
+            })
+
+    linhas_texto = []
+
+    for linha in linhas_agrupadas:
+        texto_linha = " ".join(
+            i["texto"]
+            for i in sorted(
+                linha["itens"],
+                key=lambda i: i["x"]
+            )
+        )
+
+        linhas_texto.append(texto_linha.strip())
+
+    texto_final = "\n".join(linhas_texto)
+
+    tempo_organizacao = time.perf_counter() - inicio
+    tempo_total = time.perf_counter() - inicio_total
+
+    logger.info(
+        "OCR | OrganizaÃ§Ã£o concluÃ­da em %.2f segundos",
+        tempo_organizacao
+    )
+
+    logger.info(
+        "OCR | Finalizado | Caracteres: %d | Tempo total: %.2f segundos",
+        len(texto_final),
+        tempo_total
+    )
+
+    return texto_final
+
+
+# ============================================================
+# EXTRAÃ‡ÃƒO DE DADOS DE IMAGENS
+# ============================================================
+
+def extrair_dados_imagem_ocr(image_bytes: bytes) -> dict[str, Any]:
+    """
+    Extrai dados de nota fiscal / comprovante a partir de uma imagem
+    (JPEG, PNG, WEBP), usando RapidOCR e os mesmos regex de extrair_dados_pdf.
+
+    Retorna o mesmo formato de dicionÃ¡rio que extrair_dados_pdf.
+    """
+    _t0_ocr_fn = time.perf_counter()
+    logger.info(
+        "EXTRATOR | extrair_dados_imagem_ocr | inÃ­cio | %d bytes",
+        len(image_bytes)
+    )
+
+    hash_arquivo = hashlib.sha256(image_bytes).hexdigest()
+    cached = _obter_ocr_cache(f"nota_{hash_arquivo}")
+    if cached is not None:
+        logger.info(
+            "EXTRATOR | extrair_dados_imagem_ocr | Cache SHA-256 atingido (%s) | %.3fs",
+            hash_arquivo[:12], time.perf_counter() - _t0_ocr_fn
+        )
+        return copy.deepcopy(cached)
+
+    from app.services.planilha_produto_service import (
+        _OCR_PIPELINE_LOCK,
+        OCROcupadoError,
+    )
+
+    if not _OCR_PIPELINE_LOCK.acquire(blocking=False):
+        raise OCROcupadoError(
+            "O OCR esta processando outro documento. Aguarde alguns instantes e tente novamente."
+        )
+
+    try:
+        texto_completo = _imagem_bytes_para_texto_ocr(image_bytes)
+    finally:
+        _OCR_PIPELINE_LOCK.release()
+
+    # Diagn?stico tempor?rio: somente linhas relacionadas ao pagamento.
+    for linha_ocr in texto_completo.splitlines():
+        if re.search(r"VENDA|CREDITO|CR[E?]DITO|DOC|TED|TEF|TRANSFER", linha_ocr, re.IGNORECASE):
+            logger.info("OCR | Linha de pagamento: %s", linha_ocr[:180])
+
+    if not texto_completo.strip():
+        logger.warning(
+            "EXTRATOR | extrair_dados_imagem_ocr | OCR sem texto | %.1fs",
+            time.perf_counter() - _t0_ocr_fn
+        )
+        return {
+            "fornecedor": "",
+            "data": "",
+            "forma_pagamento": "",
+            "parcelas": 1,
+            "valor_total": 0.0,
+            "itens": [],
+        }
+
+    logger.info(
+        "EXTRATOR | extrair_dados_imagem_ocr | OCR concluÃ­do | %d chars | %.1fs",
+        len(texto_completo), time.perf_counter() - _t0_ocr_fn
+    )
+
+    # Reutiliza o pipeline de regex
+    resultado = _extrair_de_texto(texto_completo)
+    _salvar_ocr_cache(f"nota_{hash_arquivo}", resultado)
+    logger.info(
+        "EXTRATOR | extrair_dados_imagem_ocr | fim | total=%.2f | %.1fs",
+        float(resultado.get("valor_total") or 0),
+        time.perf_counter() - _t0_ocr_fn,
+    )
+    return resultado
+
+
+# ============================================================
+# EXTRAÃ‡ÃƒO DE DADOS DE PDF
+# ============================================================
+
+def extrair_dados_pdf(
+    file_source: bytes | io.BytesIO | str
+) -> dict[str, Any]:
+    """
+    LÃª o texto e tabelas de um documento PDF e devolve os dados
+    estruturados da nota fiscal/comprovante.
+    """
+
+    if isinstance(file_source, bytes):
+        stream = io.BytesIO(file_source)
+
+    elif isinstance(file_source, io.BytesIO):
+        stream = file_source
+
+    elif isinstance(file_source, str):
+        stream = file_source
+
+    else:
+        raise ValueError(
+            f"Fonte de arquivo invÃ¡lida: {type(file_source)}"
+        )
+
+    texto_completo = ""
+    linhas = []
+
+    with pdfplumber.open(stream) as pdf:
+        for page in pdf.pages:
+            t = page.extract_text() or ""
+
+            texto_completo += t + "\n"
+
+            for line in t.splitlines():
+                line_str = line.strip()
+
+                if line_str:
+                    linhas.append(line_str)
+
+    if not texto_completo.strip():
+        logger.warning(
+            "Nenhum texto pÃ´de ser extraÃ­do do PDF "
+            "(pode ser imagem digitalizada sem camada de texto)."
+        )
+
+        return {
+            'fornecedor': '',
+            'data': '',
+            'forma_pagamento': '',
+            'parcelas': 1,
+            'valor_total': 0.0,
+            'itens': []
+        }
+
+    return _extrair_de_texto(texto_completo, linhas)
+
+
+# ============================================================
+# PIPELINE PRINCIPAL DE EXTRAÃ‡ÃƒO POR EXPRESSÃ•ES REGULARES
+# ============================================================
+
+def _extrair_de_texto(
+    texto_completo: str,
+    linhas: list[str] | None = None
+) -> dict[str, Any]:
+    """
+    Pipeline principal de extraÃ§Ã£o por regex.
+
+    Recebe o texto bruto (de pdfplumber ou de OCR) e retorna
+    o dicionÃ¡rio padronizado.
+
+    Se 'linhas' nÃ£o for fornecida, Ã© gerada a partir de 'texto_completo'.
+    """
+
+    if linhas is None:
+        linhas = [
+            l.strip()
+            for l in texto_completo.splitlines()
+            if l.strip()
+        ]
+
+    # ========================================================
+    # 1. IDENTIFICAR FORNECEDOR / ESTABELECIMENTO / BENEFICIÃRIO
+    # ========================================================
+
+    fornecedor = ""
+
+    # Comprovantes Pix: prioriza o nome de quem recebeu a transfer?ncia.
+    m_recebedor = re.search(
+        r"DADOS DE QUEM RECEBEU\s*[:\-]?\s*.*?NOME\s*:\s*([^\n\r]+)",
+        texto_completo,
+        re.IGNORECASE | re.DOTALL
+    )
+
+    if m_recebedor:
+        fornecedor = m_recebedor.group(1).strip()
+
+
+    # Casos DANFE / NF-e:
+    # "RECEBEMOS DE <NOME>" ou "EMITENTE: <NOME>" ou "RAZÃƒO SOCIAL"
+
+    m_rec = re.search(
+        r"RECEBEMOS\s+DE\s+([^\n\r,]+)",
+        texto_completo,
+        re.IGNORECASE
+    )
+
+    if m_rec:
+        fornecedor = m_rec.group(1).strip()
+
+    elif (
+        "BeneficiÃ¡rio" in texto_completo
+        or "Beneficirio" in texto_completo
+    ):
+        for i, l in enumerate(linhas):
+
+            if re.search(
+                r"Benefici[aÃ¡\uFFFD]rio",
+                l,
+                re.IGNORECASE
+            ):
+                if i + 1 < len(linhas):
+                    prox = linhas[i + 1]
+
+                    # Limpa CNPJ/CPF se vier na mesma linha
+                    prox_clean = re.sub(
+                        r"\d{2}\.?\d{3}\.?\d{3}/\d{4}-\d{2}|\d{11,14}",
+                        "",
+                        prox
+                    ).strip()
+
+                    fornecedor = prox_clean.split("  ")[0].strip()
+                    break
+
+    if not fornecedor:
+
+        m_emit = re.search(
+            r"(?:EMITENTE|RAZ[AÃƒ\uFFFD]O\s+SOCIAL|FORNECEDOR)[:\s]+([^\n\r]+)",
+            texto_completo,
+            re.IGNORECASE
+        )
+
+        if m_emit:
+            fornecedor = m_emit.group(1).strip()
+
+        else:
+            # Fallback aprimorado: procura padrÃµes estruturados antes de
+            # usar a primeira linha genÃ©rica.
+
+            # Tenta "EMPRESA:", "LOJA:", "ESTABELECIMENTO:" no texto
+            m_extra = re.search(
+                r"(?:EMPRESA|LOJA|ESTABELECIMENTO|CEDENTE|SACADO)[:\s]+([^\n\r,]{3,60})",
+                texto_completo,
+                re.IGNORECASE
+            )
+            if m_extra:
+                fornecedor = m_extra.group(1).strip()
+
+            else:
+                # Procura a linha imediatamente antes de um CNPJ
+                # (nome da empresa quase sempre antecede o CNPJ)
+                cnpj_match = re.search(
+                    r"(\d{2}\.?\d{3}\.?\d{3}/\d{4}-\d{2})",
+                    texto_completo
+                )
+                if cnpj_match:
+                    pos = cnpj_match.start()
+                    trecho_antes = texto_completo[:pos]
+                    linhas_antes = [l.strip() for l in trecho_antes.splitlines() if l.strip()]
+                    for cand in reversed(linhas_antes[-4:]):
+                        # ignora linhas que sÃ£o sÃ³ nÃºmeros/CNPJ/endereÃ§o
+                        if not re.search(
+                            r"^\d|RUA|AV\.|AVENIDA|R\.|CEP|FONE|TEL|FAX",
+                            cand, re.IGNORECASE
+                        ) and len(cand) > 3:
+                            fornecedor = cand
+                            break
+
+            if not fornecedor:
+                # Ãšltimo recurso: primeira linha informativa entre as 7 primeiras
+                _skip = re.compile(
+                    r"INFORMATIVO|DANFE|DOCUMENTO|NOTA FISCAL|RECIBO"
+                    r"|COMPROVANTE|PREFEITURA|SECRETARIA|MUNICIPIO|FATURA"
+                    r"|DUPLICATA|CUPOM|TRIBUT",
+                    re.IGNORECASE
+                )
+                for l in linhas[:7]:
+                   candidato = l.strip()
+
+                   if (
+                       len(candidato) > 3
+                       and not _skip.search(candidato)
+                       and not re.search(r"\\d{2}[/.-]\\d{2}[/.-]\\d{4}", candidato)
+                       and not re.search(r"\\d{1,2}:\\d{2}", candidato)
+                       and not re.fullmatch(r"[\\d\\s.,/:-]+", candidato)
+                   ):
+                       fornecedor = candidato
+                       break
+
+    # ========================================================
+    # 2. IDENTIFICAR DATA
+    # ========================================================
+
+    data_formatada = ""
+
+    # PadrÃ£o DD/MM/AAAA, DD-MM-AAAA ou DD.MM.AAAA
+
+    datas_encontradas = re.findall(
+        r"\b(\d{2})[/.-](\d{2})[/.-](\d{4})\b",
+        texto_completo
+    )
+
+    if datas_encontradas:
+
+        for d, m, a in datas_encontradas:
+
+            try:
+                dt = datetime(
+                    int(a),
+                    int(m),
+                    int(d)
+                )
+
+                data_formatada = dt.strftime("%Y-%m-%d")
+                break
+
+            except ValueError:
+                continue
+
+    # ========================================================
+    # 3. IDENTIFICAR FORMA DE PAGAMENTO E PARCELAS
+    # ========================================================
+
+    # â”€â”€ Forma de pagamento: busca contextual (evita falso-positivo) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    forma_pagamento = ""
+    parcelas = 1
+
+    t_upper = texto_completo.upper()
+
+    # Normaliza acentos para evitar problemas de codifica??o e OCR.
+    import unicodedata
+
+    t_norm = "".join(
+        caractere
+        for caractere in unicodedata.normalize("NFD", t_upper)
+        if unicodedata.category(caractere) != "Mn"
+    )
+
+    # Prioridade 1: Pix
+    if re.search(r"\bPIX\b|PAGAMENTO\s+(?:VIA\s+)?PIX|CHAVE\s+PIX", t_norm):
+        forma_pagamento = "Pix"
+
+    # Prioridade 2: Cart?o de cr?dito
+    elif re.search(
+        r"CARTAO\s+(?:DE\s+)?CREDITO"
+        r"|CREDITO\s+EM\s+\d+\s*[Xx]"
+        r"|COMPRA\s+CREDITO"
+        r"|CREDITO\s+PARCELADO"
+        r"|VENDA\s*A?\s*CREDITO",
+        t_norm
+    ):
+        forma_pagamento = "Cart\u00e3o de Cr\u00e9dito"
+
+    # Prioridade 3: Cart?o de d?bito
+    elif re.search(
+        r"CARTAO\s+(?:DE\s+)?DEBITO"
+        r"|DEBITO\s+(?:EM\s+CONTA|AUTOMATICO|CONTA)"
+        r"|COMPRA\s+DEBITO",
+        t_norm
+    ):
+        forma_pagamento = "Cart\u00e3o de D\u00e9bito"
+
+    # Prioridade 4: Dinheiro
+    elif re.search(
+        r"\bDINHEIRO\b|\bESPECIE\b|PAGAMENTO\s+EM\s+DINHEIRO",
+        t_norm
+    ):
+        forma_pagamento = "Dinheiro"
+
+    # Prioridade 5: Transfer?ncia
+    # DOC foi removido para n?o confundir c?digos como DOC=100000.
+    elif re.search(
+        r"\bTRANSFERENCIA\b|\bTED\b|\bTEF\b",
+        t_norm
+    ):
+        forma_pagamento = "Transfer\u00eancia"
+
+    # Prioridade 6: Boleto (mant?m o comportamento anterior)
+    elif re.search(
+        r"\bBOLETO\b|LINHA\s+DIGITAVEL|CODIGO\s+DE\s+BARRAS",
+        t_norm
+    ):
+        forma_pagamento = "Pix"
+
+    logger.debug("EXTRATOR | forma_pagamento detectada: '%s'", forma_pagamento)
+
+    # â”€â”€ Parcelas: identifica TOTAL (nÃ£o parcela atual) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Ordem de tentativa (mais especÃ­fico â†’ menos especÃ­fico):
+    #   1. "Parcela N de M" ou "Parcela N/M" â†’ total = M
+    #   2. "parc. N/M"  ou  "PARC N/M"      â†’ total = M
+    #   3. "N/M" precedido por "PARCELA"     â†’ total = M
+    #   4. "em Nx" / "Nx"                   â†’ total = N
+    #   5. "N parcelas"                     â†’ total = N
+
+    _parc_total: int | None = None
+
+    # PadrÃ£o 1 â€” "Parcela 1 de 3" / "Parcela 1/3" / "1Âª parcela de 3"
+    m = re.search(
+        r"PARCELA\s+\d{1,2}\s+DE\s+(\d{1,2})"
+        r"|PARCELA\s+\d{1,2}/(\d{1,2})"
+        r"|\d{1,2}[ÂªÂº]\.?\s*PARCELA\s+DE\s+(\d{1,2})",
+        t_upper
+    )
+    if m:
+        g = next((x for x in m.groups() if x), None)
+        if g:
+            _parc_total = int(g)
+
+    # PadrÃ£o 2 â€” "PARC. 01/03" / "PARC 1/3"
+    if _parc_total is None:
+        m = re.search(r"PARC\.?\s+\d{1,2}/(\d{1,2})", t_upper)
+        if m:
+            _parc_total = int(m.group(1))
+
+    # PadrÃ£o 3 â€” "01/03" precedido de PARCELA na mesma linha
+    if _parc_total is None:
+        for linha in linhas:
+            lu = linha.upper()
+            if "PARCELA" in lu or "PARC" in lu:
+                m = re.search(r"\b(\d{1,2})/(\d{1,2})\b", lu)
+                if m:
+                    num_atual, num_total = int(m.group(1)), int(m.group(2))
+                    if num_total > num_atual and 2 <= num_total <= 48:
+                        _parc_total = num_total
+                        break
+
+    # PadrÃ£o 4 â€” "em 3x", "3x", "3 x", "(3x)"
+    if _parc_total is None:
+        m = re.search(r"(?:EM\s+)?(\d{1,2})\s*[xX]\b", t_upper)
+        if m:
+            n = int(m.group(1))
+            if 2 <= n <= 48:
+                _parc_total = n
+
+    # PadrÃ£o 5 â€” "em 3 parcelas" / "3 parcelas"
+    if _parc_total is None:
+        m = re.search(r"(?:EM\s+)?(\d{1,2})\s+PARCELA", t_upper)
+        if m:
+            n = int(m.group(1))
+            if 2 <= n <= 48:
+                _parc_total = n
+
+    if _parc_total and 2 <= _parc_total <= 48:
+        parcelas = _parc_total
+        logger.debug("EXTRATOR | parcelas detectadas: %d", parcelas)
+
+        # Se hÃ¡ parcelas e ainda nÃ£o identificamos a forma, verifica cartÃ£o
+        if not forma_pagamento and "CART" in t_upper:
+            forma_pagamento = "CartÃ£o de CrÃ©dito"
+        elif forma_pagamento == "" and parcelas > 1:
+            forma_pagamento = "CartÃ£o de CrÃ©dito"  # parcelamento â†’ crÃ©dito por padrÃ£o
+
+    # ========================================================
+    # 4. IDENTIFICAR VALOR TOTAL
+    # ========================================================
+
+    valor_total = 0.0
+
+    # Procura por:
+    # VALOR DO DOCUMENTO
+    # VALOR TOTAL
+    # TOTAL DA NOTA
+    # VALOR COBRADO
+
+    padroes_total = [
+
+        r"(?:VALOR\s+DO\s+DOCUMENTO|VALOR\s+COBRADO|TOTAL\s+DA\s+NOTA|VALOR\s+TOTAL|TOTAL\s+A\s+PAGAR)[\s:=]*R?\$?\s*([\d\.,]+)",
+
+        r"(?:VALOR|TOTAL)[\s:=]+R?\$?\s*([\d\.,]+)",
+
+        r"R\$\s*([\d\.,]+)"
+    ]
+
+    for padrao in padroes_total:
+
+        matches = re.findall(
+            padrao,
+            texto_completo,
+            re.IGNORECASE
+        )
+
+        candidatos = []
+
+        for match in matches:
+
+            v_str = match.strip().replace(" ", "")
+
+            # Trata formato brasileiro 1.234,56 ou 1234.56
+
+            if "," in v_str and "." in v_str:
+
+                if v_str.rfind(",") > v_str.rfind("."):
+                    v_str = v_str.replace(".", "").replace(",", ".")
+
+                else:
+                    v_str = v_str.replace(",", "")
+
+            elif "," in v_str:
+                v_str = v_str.replace(",", ".")
+
+            try:
+                val = float(v_str)
+
+                if val > 0:
+                    candidatos.append(val)
+
+            except ValueError:
+                continue
+
+        if candidatos:
+
+            # Em boletos e DANFEs, o valor do documento
+            # geralmente Ã© o maior ou o primeiro explÃ­cito
+
+            valor_total = candidatos[0]
+            break
+
+    # ========================================================
+    # 5. IDENTIFICAR ITENS
+    # ========================================================
+
+    itens = []
+
+    # Tenta localizar linhas de produtos em DANFE ou lista simples
+
+    palavras_bloqueadas = [
+
+        "VALOR",
+        "TOTAL",
+        "DOCUMENTO",
+        "MULTA",
+        "JUROS",
+        "DESCONTO",
+        "PAGADOR",
+        "BENEFICIARIO",
+        "BENEFICIÃRIO",
+        "AGÃŠNCIA",
+        "AGENCIA",
+        "CÃ“DIGO",
+        "CODIGO",
+        "CEDENTE",
+        "SACADO",
+        "COMPENSAÃ‡ÃƒO",
+        "COMPENSACAO",
+        "CNPJ",
+        "CPF",
+        "ENDEREÃ‡O",
+        "ENDERECO",
+        "REAL"
+    ]
+
+    for l in linhas:
+
+        # Linhas contendo descriÃ§Ã£o e valor com R$
+
+        m_item = re.search(
+            r"^(.*?)\s+R\$\s*([\d\.,]+)$",
+            l
+        )
+
+        if not m_item and " R$ " in l:
+
+            partes = l.split(" R$ ")
+
+            if len(partes) == 2:
+
+                m_item = re.search(
+                    r"^(.*?)\s+([\d\.,]+)$",
+                    f"{partes[0]} {partes[1]}"
+                )
+
+        if m_item:
+
+            desc = m_item.group(1).strip()
+
+            # Ignora se for linha de boleto bancÃ¡rio ou cabeÃ§alho
+
+            if any(
+                kw in desc.upper()
+                for kw in palavras_bloqueadas
+            ):
+                continue
+
+            v_txt = m_item.group(2).strip()
+
+            if "," in v_txt and "." in v_txt:
+                v_txt = v_txt.replace(".", "").replace(",", ".")
+
+            elif "," in v_txt:
+                v_txt = v_txt.replace(",", ".")
+
+            try:
+                v_float = float(v_txt)
+
+                # Valores de itens nÃ£o podem ser gigantescos
+                # nem exceder o total
+
+                if (
+                    0.01 <= v_float <= (
+                        valor_total if valor_total > 0 else 999999
+                    )
+                    and len(desc) > 2
+                ):
+
+                    itens.append({
+                        'descricao': desc,
+                        'valor': v_float,
+                        'categoria_sugerida': ''
+                    })
+
+            except ValueError:
+                pass
+
+    if not itens and valor_total > 0:
+
+        desc_padrao = fornecedor or "Despesa de Comprovante"
+
+        itens.append({
+            'descricao': desc_padrao,
+            'valor': valor_total,
+            'categoria_sugerida': ''
+        })
+
+    # ========================================================
+    # RETORNO PADRONIZADO
+    # ========================================================
+
+    return {
+        'fornecedor': fornecedor,
+        'data': data_formatada,
+        'forma_pagamento': forma_pagamento,
+        'parcelas': parcelas,
+        'valor_total': valor_total,
+        'itens': itens
+    }
+
+
+=== CONFIGURACOES DE INFRAESTRUTURA ===
+
+Name                                           Length
+----                                           ------
+render.yaml                                       195
+requirements.txt                                  462
+requirements.txt.bak_tesseract_20261111_234049    462
+
+
+

@@ -123,6 +123,32 @@ def processar_ocr(caminho, modo):
     return resposta
 
 
+def processar_imagem_fiscal(caminho):
+    # A extração fiscal acontece exclusivamente no subprocesso.
+    import extrator_nota
+
+    conteudo = Path(caminho).read_bytes()
+
+    logging.info(
+        "IMAGEM FISCAL | Iniciando extração | bytes=%d",
+        len(conteudo),
+    )
+
+    resultado = extrator_nota.extrair_dados_imagem_ocr(conteudo)
+
+    if not isinstance(resultado, dict):
+        raise ValueError(
+            "O extrator de imagem fiscal retornou dados inválidos."
+        )
+
+    logging.info(
+        "IMAGEM FISCAL | Extração concluída | itens=%d",
+        len(resultado.get("itens") or []),
+    )
+
+    return converter_json(resultado)
+
+
 def processar_pdf(caminho):
     # Estes imports acontecem exclusivamente no subprocesso.
     import extrator_nota
@@ -157,7 +183,7 @@ def main():
 
     parser.add_argument(
         "--mode",
-        choices=("planilha", "nota", "pdf"),
+        choices=("planilha", "nota", "pdf", "fiscal_imagem"),
         required=True,
     )
 
@@ -182,6 +208,8 @@ def main():
 
         if args.mode == "pdf":
             resultado = processar_pdf(caminho)
+        elif args.mode == "fiscal_imagem":
+            resultado = processar_imagem_fiscal(caminho)
         else:
             resultado = processar_ocr(caminho, args.mode)
 

@@ -40,7 +40,7 @@ def _executar_processo(conteudo: bytes, modo: str):
     if not isinstance(conteudo, bytes) or not conteudo:
         raise ValueError("O arquivo enviado está vazio ou é inválido.")
 
-    if modo not in ("planilha", "nota", "pdf"):
+    if modo not in ("planilha", "nota", "pdf", "fiscal_imagem"):
         raise ValueError("Tipo de processamento inválido.")
 
     if not OCR_LOCK.acquire(blocking=False):
@@ -156,12 +156,12 @@ def _executar_processo(conteudo: bytes, modo: str):
 
             resultado = resposta.get("resultado")
 
-            if modo == "pdf" and not isinstance(resultado, dict):
+            if modo in ("pdf", "fiscal_imagem") and not isinstance(resultado, dict):
                 raise RuntimeError(
                     "O worker PDF retornou dados em formato inválido."
                 )
 
-            if modo != "pdf" and not isinstance(resultado, list):
+            if modo not in ("pdf", "fiscal_imagem") and not isinstance(resultado, list):
                 raise RuntimeError(
                     "O worker OCR retornou dados em formato inválido."
                 )
@@ -190,3 +190,9 @@ def executar_ocr_bytes(conteudo: bytes, modo: str = "planilha"):
 def executar_pdf_bytes(conteudo: bytes):
     # Executa a extração textual e estruturação do PDF em subprocesso.
     return _executar_processo(conteudo, "pdf")
+
+
+
+def executar_nota_fiscal_bytes(conteudo: bytes):
+    # Executa a extração fiscal de imagem em subprocesso independente.
+    return _executar_processo(conteudo, "fiscal_imagem")

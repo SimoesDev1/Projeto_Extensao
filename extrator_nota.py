@@ -35,22 +35,19 @@ logger = logging.getLogger(__name__)
 # RAPIDOCR COMPARTILHADO
 # ============================================================
 
+# Cache LRU local autônomo (não importa serviços pesados nem banco de dados)
+_CACHE_LOCAL_OCR: dict[str, Any] = {}
+
 def _obter_ocr_cache(chave: str):
-    """Obtém resultado do OCR em cache."""
-    try:
-        from app.services.planilha_produto_service import _obter_ocr_cache as obter
-        return obter(chave)
-    except Exception:
-        return None
+    """Obtém resultado do OCR em cache em memória local."""
+    return _CACHE_LOCAL_OCR.get(chave)
 
 
 def _salvar_ocr_cache(chave: str, valor):
-    """Salva resultado do OCR em cache."""
-    try:
-        from app.services.planilha_produto_service import _salvar_ocr_cache as salvar
-        salvar(chave, valor)
-    except Exception:
-        pass
+    """Salva resultado do OCR em cache em memória local."""
+    if len(_CACHE_LOCAL_OCR) >= 8:
+        _CACHE_LOCAL_OCR.pop(next(iter(_CACHE_LOCAL_OCR)))
+    _CACHE_LOCAL_OCR[chave] = valor
 
 
 # ============================================================

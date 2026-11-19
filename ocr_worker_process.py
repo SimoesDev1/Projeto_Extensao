@@ -9,6 +9,11 @@ from pathlib import Path
 
 # Garante que o worker saiba que já é um processo isolado
 os.environ["DENTRO_DO_WORKER"] = "1"
+# Limita alocação de threads e pools nativos para economizar memória no Linux/Render
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 
 def converter_json(valor):
@@ -136,6 +141,7 @@ def processar_ocr(caminho, modo):
     threads_inter = int(os.getenv("OCR_INTER_OP_THREADS", "1"))
 
     motor = RapidOCR(
+        use_cls=False,
         intra_op_num_threads=threads_intra,
         inter_op_num_threads=threads_inter,
     )

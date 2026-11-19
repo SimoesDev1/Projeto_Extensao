@@ -34,10 +34,10 @@ from app.services.ocr_worker_service import (
     OCROcupadoError,
 )
 
-# Cache LRU de OCR indexado por SHA-256 do arquivo (máx. 8 entradas)
+# Cache LRU de OCR indexado por SHA-256 do arquivo (máx. 4 entradas — era 8)
 _OCR_CACHE = OrderedDict()
 _OCR_CACHE_LOCK = _threading.Lock()
-_OCR_CACHE_MAX = 8
+_OCR_CACHE_MAX = 4
 
 
 def _obter_ocr_cache(chave: str):

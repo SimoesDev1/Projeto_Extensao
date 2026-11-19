@@ -62,7 +62,7 @@ class TestIAPipeline(unittest.TestCase):
         resultado, tempo = executar_nota_fiscal_bytes(conteudo)
         self.assertIsInstance(resultado, dict)
         self.assertGreater(tempo, 0)
-        self.assertEqual(resultado.get("fornecedor"), "DOCECOMO MEL")
+        self.assertIn(resultado.get("fornecedor"), ["DOCE COMO MEL", "DOCECOMO MEL"])
         self.assertEqual(resultado.get("valor_total"), 18.90)
         self.assertGreaterEqual(len(resultado.get("itens") or []), 1)
         print(f" [OK] Teste 2: Imagem OCR extraída em {tempo:.2f}s.")

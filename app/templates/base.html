@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Doce como Mel – {% block title %}{% endblock %}</title>
     <meta name="description" content="Sistema de controle financeiro para pequenos negócios — Doce como Mel.">
     <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -156,13 +156,14 @@
         </div>
     </div>
 
-    <!-- SPINNER GLOBAL -->
+    <!-- SPINNER GLOBAL DINÂMICO -->
     <div id="page-spinner"
-        style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
+        style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(10,12,18,0.75); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); align-items:center; justify-content:center;">
         <div
-            style="background:var(--surface-solid); padding:28px 36px; border-radius:var(--radius); border:1px solid var(--border); text-align:center;">
-            <i class="bi bi-arrow-repeat spin" style="font-size:2rem; color:var(--amber);"></i>
-            <p style="margin-top:12px; color:var(--text-muted); font-size:0.85rem;">Processando...</p>
+            style="background:var(--surface-solid); padding:32px 40px; border-radius:var(--radius); border:1px solid rgba(251,191,36,0.3); text-align:center; box-shadow:0 12px 36px rgba(0,0,0,0.5); max-width:90%;">
+            <i class="bi bi-arrow-repeat spin" style="font-size:2.2rem; color:var(--amber);"></i>
+            <p id="page-spinner-text" style="margin-top:14px; color:var(--text); font-weight:600; font-size:0.92rem;">Processando...</p>
+            <p id="page-spinner-sub" style="margin-top:4px; color:var(--text-muted); font-size:0.78rem;">Por favor, aguarde alguns instantes</p>
         </div>
     </div>
 
@@ -194,8 +195,25 @@
             });
         })();
 
-        // ── Spinner em submissões de formulário ──
+        // ── Spinner dinâmico em submissões de formulário ──
         let _spinnerTimeout = null;
+
+        window.mostrarSpinner = function(texto, subtexto) {
+            const sp = document.getElementById('page-spinner');
+            if (!sp) return;
+            const txt = document.getElementById('page-spinner-text');
+            const sub = document.getElementById('page-spinner-sub');
+            if (txt && texto) txt.textContent = texto;
+            if (sub) sub.textContent = subtexto || 'Por favor, aguarde alguns instantes';
+            sp.style.display = 'flex';
+            if (_spinnerTimeout) clearTimeout(_spinnerTimeout);
+            _spinnerTimeout = setTimeout(pararSpinnerGlobal, 95000);
+        };
+
+        window.esconderSpinner = function() {
+            pararSpinnerGlobal();
+        };
+
         function pararSpinnerGlobal() {
             const spinner = document.getElementById('page-spinner');
             if (spinner) spinner.style.display = 'none';
@@ -210,10 +228,9 @@
         document.querySelectorAll('form[data-loading]').forEach(form => {
             form.addEventListener('submit', (e) => {
                 if (e.defaultPrevented) return;
-                const spinner = document.getElementById('page-spinner');
-                if (spinner) spinner.style.display = 'flex';
-                if (_spinnerTimeout) clearTimeout(_spinnerTimeout);
-                _spinnerTimeout = setTimeout(pararSpinnerGlobal, 95000);
+                const msg = form.dataset.loadingMessage || 'Processando lançamento...';
+                const sub = form.dataset.loadingSub || 'Salvando informações no banco de dados';
+                window.mostrarSpinner(msg, sub);
             });
         });
 

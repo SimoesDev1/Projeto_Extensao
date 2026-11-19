@@ -31,6 +31,11 @@ class Gasto(db.Model):
     # Pago / pendente (útil para controle de contas a pagar)
     is_pago = db.Column(db.Boolean, nullable=False, default=False)
 
+    __table_args__ = (
+        db.Index('ix_gasto_usuario_data', 'id_usuario', 'data_gasto'),
+        db.Index('ix_gasto_usuario_categoria', 'id_usuario', 'id_categoria'),
+    )
+
     @property
     def is_parcelado(self) -> bool:
         return bool(self.total_parcelas and self.total_parcelas > 1)

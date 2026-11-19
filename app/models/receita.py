@@ -17,5 +17,9 @@ class Receita(db.Model):
     # Relacionamento com Usuário
     id_usuario = db.Column(db.Integer, db.ForeignKey('usuario.id_usuario'), nullable=False, index=True)
 
+    __table_args__ = (
+        db.Index('ix_receita_usuario_data', 'id_usuario', 'data_receita'),
+    )
+
     def __repr__(self):
         return f'<Receita R${self.valor} em {self.data_receita}>'

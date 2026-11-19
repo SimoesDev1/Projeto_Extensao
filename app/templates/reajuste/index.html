@@ -575,11 +575,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // ENVIO NATIVO DO FORMULÁRIO - DIAGNÓSTICO SAFARI
+    // ENVIO COM FEEDBACK VISUAL POR ETAPAS
+    let _intervaloEtapas = null;
+
     formReajuste.addEventListener('submit', function(e) {
-
-        console.log('FORMULÁRIO: evento submit iniciado');
-
         if (!inputPlanilha.files || !inputPlanilha.files[0]) {
             e.preventDefault();
             alert('Selecione um arquivo antes de continuar.');
@@ -588,24 +587,36 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const arquivoSelecionado = inputPlanilha.files[0];
 
-        console.log('ARQUIVO:', arquivoSelecionado.name);
-        console.log('TAMANHO:', arquivoSelecionado.size);
-        console.log('TIPO:', arquivoSelecionado.type);
-
         btnProcessar.dataset.textoOriginal = btnProcessar.innerHTML;
         btnProcessar.disabled = true;
-        btnProcessar.textContent = 'Enviando arquivo...';
+        btnProcessar.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Processando reajuste...';
 
-        const spinner = document.getElementById('page-spinner');
+        if (window.mostrarSpinner) {
+            window.mostrarSpinner('Enviando documento...', 'Carregando arquivo para o servidor');
+            
+            let etapa = 0;
+            const etapas = [
+                { t: 'Lendo produtos e preços...', s: 'Identificando itens e valores no documento' },
+                { t: 'Consultando taxa oficial IPCA...', s: 'Conectando à API do Banco Central (SGS Série 433)' },
+                { t: 'Calculando correção monetária...', s: 'Aplicando regras de arredondamento e margens' },
+                { t: 'Gerando relatórios finais...', s: 'Criando novos arquivos em PDF e Excel' }
+            ];
 
-        if (spinner) {
-            spinner.style.display = 'flex';
+            _intervaloEtapas = setInterval(function() {
+                if (etapa < etapas.length) {
+                    window.mostrarSpinner(etapas[etapa].t, etapas[etapa].s);
+                    etapa++;
+                } else {
+                    clearInterval(_intervaloEtapas);
+                }
+            }, 2500);
         }
     });
 
-// Restaura a interface quando a página é carregada
+    // Restaura a interface quando a página é carregada
     // ou recuperada pelo histórico do Safari.
     window.addEventListener('pageshow', function() {
+        if (_intervaloEtapas) clearInterval(_intervaloEtapas);
         pararLoading();
     });
 

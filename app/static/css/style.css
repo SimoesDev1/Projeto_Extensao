@@ -868,6 +868,15 @@ body {
 @media (max-width: 768px) {
     :root { --sidebar-width: 0px; }
 
+    /* Previne zoom automático forçado do Safari no iPhone ao focar em inputs (iOS WebKit Bug) */
+    .form-control, .form-select, .form-input, input, select, textarea {
+        font-size: 16px !important;
+    }
+
+    body {
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+
     .sidebar {
         transform: translateX(-100%);
         width: 260px;

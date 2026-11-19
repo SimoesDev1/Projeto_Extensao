@@ -83,6 +83,7 @@ def _executar_processo(conteudo: bytes, modo: str):
 
             ambiente = os.environ.copy()
             ambiente["PYTHONUNBUFFERED"] = "1"
+            ambiente["DENTRO_DO_WORKER"] = "1"
 
             logger.info(
                 "DOCUMENTO | Iniciando subprocesso | modo=%s | "

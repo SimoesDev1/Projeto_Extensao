@@ -16,6 +16,7 @@ Retorna um dicionário com:
 """
 
 import io
+import os
 import re
 import logging
 import time
@@ -56,21 +57,46 @@ def _salvar_ocr_cache(chave: str, valor):
 # OCR DE IMAGENS
 # ============================================================
 
-def _imagem_bytes_para_texto_ocr(image_bytes: bytes) -> str:
+def _imagem_bytes_para_texto_ocr(image_bytes: bytes, caminho_imagem: str = None) -> str:
     """
-    Executa OCR de imagem em processo independente e organiza as detecções.
-    O pós-processamento original é preservado abaixo.
+    Executa OCR de imagem e organiza as detecções.
+    Se já estiver dentro do worker independente (DENTRO_DO_WORKER=1), processa
+    diretamente no mesmo processo para evitar aninhamento de subprocessos e
+    estouro do limite de 512MB do servidor (ex: Render).
     """
     inicio_total = time.perf_counter()
 
-    logger.info(
-        "OCR | Enviando imagem ao processo independente | Tamanho: %.2f MB",
-        len(image_bytes) / (1024 * 1024),
-    )
+    if os.getenv("DENTRO_DO_WORKER") == "1":
+        logger.info(
+            "OCR | Processando no mesmo worker (sem subprocesso aninhado) | Tamanho: %.2f MB",
+            len(image_bytes) / (1024 * 1024),
+        )
+        import ocr_worker_process
+        if caminho_imagem and os.path.isfile(caminho_imagem):
+            res = ocr_worker_process.processar_ocr(caminho_imagem, modo="nota")
+        else:
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                tmp.write(image_bytes)
+                tmp_path = tmp.name
+            try:
+                res = ocr_worker_process.processar_ocr(tmp_path, modo="nota")
+            finally:
+                if os.path.exists(tmp_path):
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+        tempo_worker = time.perf_counter() - inicio_total
+    else:
+        logger.info(
+            "OCR | Enviando imagem ao processo independente | Tamanho: %.2f MB",
+            len(image_bytes) / (1024 * 1024),
+        )
 
-    from app.services.ocr_worker_service import executar_ocr_bytes
+        from app.services.ocr_worker_service import executar_ocr_bytes
 
-    res, tempo_worker = executar_ocr_bytes(image_bytes, modo="nota")
+        res, tempo_worker = executar_ocr_bytes(image_bytes, modo="nota")
 
     logger.info(
         "OCR | Worker concluído | caixas=%d | tempo_worker=%.2fs",
@@ -182,7 +208,7 @@ def _imagem_bytes_para_texto_ocr(image_bytes: bytes) -> str:
 # EXTRAÇÃO DE DADOS DE IMAGENS
 # ============================================================
 
-def extrair_dados_imagem_ocr(image_bytes: bytes) -> dict[str, Any]:
+def extrair_dados_imagem_ocr(image_bytes: bytes, caminho_imagem: str = None) -> dict[str, Any]:
     """
     Extrai dados de nota fiscal / comprovante a partir de uma imagem
     (JPEG, PNG, WEBP), usando RapidOCR e os mesmos regex de extrair_dados_pdf.
@@ -204,7 +230,7 @@ def extrair_dados_imagem_ocr(image_bytes: bytes) -> dict[str, Any]:
         )
         return copy.deepcopy(cached)
 
-    texto_completo = _imagem_bytes_para_texto_ocr(image_bytes)
+    texto_completo = _imagem_bytes_para_texto_ocr(image_bytes, caminho_imagem=caminho_imagem)
 
     # Diagn?stico tempor?rio: somente linhas relacionadas ao pagamento.
     for linha_ocr in texto_completo.splitlines():

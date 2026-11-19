@@ -7,6 +7,9 @@ import sys
 import time
 from pathlib import Path
 
+# Garante que o worker saiba que já é um processo isolado
+os.environ["DENTRO_DO_WORKER"] = "1"
+
 
 def converter_json(valor):
     if valor is None or isinstance(valor, (str, int, float, bool)):
@@ -178,7 +181,7 @@ def processar_imagem_fiscal(caminho):
         len(conteudo),
     )
 
-    resultado = extrator_nota.extrair_dados_imagem_ocr(conteudo)
+    resultado = extrator_nota.extrair_dados_imagem_ocr(conteudo, caminho_imagem=caminho)
 
     if not isinstance(resultado, dict):
         raise ValueError(

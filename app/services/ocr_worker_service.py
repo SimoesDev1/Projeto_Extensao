@@ -52,6 +52,42 @@ def _executar_processo(conteudo: bytes, modo: str):
     inicio = time.perf_counter()
 
     try:
+        # No Render (512MB RAM), para modos de imagem puros ("planilha", "nota"),
+        # executamos in-process com limpeza rigorosa de memória.
+        # Isso evita o fork() do Linux duplicar a memória do processo Flask (Pandas/Bacen)
+        # e estourar o limite de 512MB do container.
+        usar_in_process = (
+            os.getenv("OCR_IN_PROCESS", "").lower() in ("true", "1")
+            or (os.getenv("RENDER") and modo in ("planilha", "nota"))
+        )
+
+        if usar_in_process:
+            import ocr_worker_process
+            with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
+                tmp.write(conteudo)
+                tmp_path = tmp.name
+            try:
+                logger.info(
+                    "DOCUMENTO | Executando OCR in-process (modo=%s) para preservar RAM do container",
+                    modo,
+                )
+                resultado = ocr_worker_process.processar_ocr(tmp_path, modo)
+                tempo_total = time.perf_counter() - inicio
+                logger.info(
+                    "DOCUMENTO | OCR in-process concluído | modo=%s | tempo=%.2fs",
+                    modo,
+                    tempo_total,
+                )
+                return resultado, tempo_total
+            finally:
+                if os.path.exists(tmp_path):
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+                import gc
+                gc.collect()
+
         raiz = Path(__file__).resolve().parents[2]
         worker = raiz / "ocr_worker_process.py"
 

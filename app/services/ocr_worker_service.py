@@ -93,6 +93,10 @@ def _executar_processo(conteudo: bytes, modo: str):
                 timeout,
             )
 
+            # Libera memória no processo Flask antes de instanciar o subprocesso
+            import gc
+            gc.collect()
+
             try:
                 processo = subprocess.run(
                     comando,
@@ -179,6 +183,11 @@ def _executar_processo(conteudo: bytes, modo: str):
 
     finally:
         OCR_LOCK.release()
+        try:
+            import gc
+            gc.collect()
+        except Exception:
+            pass
 
 
 def executar_ocr_bytes(conteudo: bytes, modo: str = "planilha"):

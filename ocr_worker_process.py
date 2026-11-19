@@ -58,25 +58,18 @@ def preparar_imagem(caminho, modo):
 
     if modo == "planilha":
         # -----------------------------------------------------------
-        # PLANILHA / IPCA  — precisa de resolução um pouco maior para
-        # ler textos pequenos em tabelas, mas sem exagero.
+        # PLANILHA / IPCA  — apenas downscale para no máximo 960px
+        # Sem upscale artificial que infle o consumo de RAM
         # -----------------------------------------------------------
-        max_lado = int(os.getenv("OCR_MAX_LADO_PLANILHA", "1024"))  # era 1600
+        max_lado = int(os.getenv("OCR_MAX_LADO_PLANILHA", "960"))
 
         with Image.open(caminho) as original:
+            if original.format == "JPEG":
+                original.draft("RGB", (max_lado, max_lado))
             img = ImageOps.exif_transpose(original).convert("RGB")
 
-        # Downscale se necessário
         if max(img.size) > max_lado:
-            img.thumbnail((max_lado, max_lado), Image.BILINEAR)  # era LANCZOS
-
-        # Upscale suave (máx 1.5×) só quando a imagem for muito pequena
-        fator_float = max_lado / max(img.size)
-        if fator_float > 1.1:
-            fator = min(1.5, fator_float)
-            novo_w = int(img.width * fator)
-            novo_h = int(img.height * fator)
-            img = img.resize((novo_w, novo_h), Image.BILINEAR)
+            img.thumbnail((max_lado, max_lado), Image.BILINEAR)
 
         arr = np.array(img)
         del img
